@@ -7,7 +7,7 @@ import {
   Megaphone, Radio, Calendar, DollarSign, Package, Globe, Ghost,
   Fingerprint, Search, Headphones, Languages, GraduationCap, UserCircle,
   Workflow, Palette, BarChart3, Drama, Network, TrendingUp,
-  Activity, BookMarked, Menu, X
+  Activity, BookMarked, Menu, X, Lightbulb
 } from "lucide-react";
 
 const SECTIONS = [
@@ -15,6 +15,7 @@ const SECTIONS = [
     label: "Écriture",
     items: [
       { href: "/studio",   icon: BookOpen,      label: "Studio d'Écriture" },
+      { href: "/inspire",  icon: Lightbulb,     label: "Mode Inspiration ✨" },
       { href: "/ghost",    icon: Ghost,         label: "Ghost Mode ⚡" },
       { href: "/tone",     icon: Fingerprint,   label: "Tone Cloner" },
       { href: "/persona",  icon: Drama,         label: "Persona IA" },

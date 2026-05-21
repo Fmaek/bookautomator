@@ -111,11 +111,12 @@ Titre: "${chapterTitle}"
           messages: [
             { role: "system", content: SYSTEM_AUTHOR },
             { role: "user", content: `Écris le poème "${chapterTitle}" du recueil "${title}" (${chapterIndex}/${totalChapters}).
-20-30 vers, images fortes, rythme soutenu, strophes de 4-6 vers.
-Langage poétique dense, métaphores originales. Termine sur une image inoubliable.
-Aucun astérisque, aucun tiret de liste, aucun titre.` },
+LONGUEUR: 10 à 14 vers maximum — pas plus. Un poème court et dense, pas une ode.
+3 strophes de 3-4 vers. Images fortes, rythme soutenu, métaphores originales.
+Termine sur une image inoubliable en une seule ligne.
+Aucun astérisque, aucun tiret de liste, aucun titre, aucun commentaire.` },
           ],
-          temperature: 0.9, max_tokens: 2048,
+          temperature: 0.9, max_tokens: 500,
         });
         return NextResponse.json({ content: completion.choices[0].message.content || "" });
       }
@@ -1319,6 +1320,41 @@ JSON:
       });
       const raw = completion.choices[0].message.content?.trim() || "{}";
       return NextResponse.json(JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()));
+    }
+
+    // ── BOOK INSPIRATION ──────────────────────────────────────────────────────
+    if (action === "book_inspiration") {
+      const { books, newCategory, newAudience } = body;
+      // books = array of { title, category, summary (first 300 chars of content) }
+      const bookList = (books as { title: string; category: string; summary: string }[])
+        .map((b, i) => `${i + 1}. "${b.title}" (${b.category}): ${b.summary}`)
+        .join("\n");
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es un éditeur visionnaire spécialisé dans les livres à succès. Tu analyses des œuvres existantes pour en distiller l'essence et créer de nouvelles idées uniques." },
+          { role: "user", content: `Analyse ces livres existants et génère 3 idées de nouveaux livres originaux qui s'en inspirent:
+
+LIVRES D'INSPIRATION:
+${bookList}
+
+${newCategory ? `Catégorie souhaitée: ${newCategory}` : ""}
+${newAudience ? `Audience cible: ${newAudience}` : ""}
+
+Pour chaque idée, fournis:
+- TITRE: (accrocheur et mémorable)
+- CONCEPT: (2-3 phrases — l'idée centrale unique)
+- CE QUI L'INSPIRE: (quels éléments sont pris des livres d'origine)
+- TWIST UNIQUE: (ce qui rend ce livre différent)
+- PLAN: (5-7 titres de chapitres)
+- CIBLE: (profil du lecteur idéal)
+- POTENTIEL: (estimation du marché)
+
+Numérote chaque idée clairement. Sois créatif, ambitieux et commercial.` },
+        ],
+        temperature: 0.85, max_tokens: 2500,
+      });
+      return NextResponse.json({ ideas: completion.choices[0].message.content || "" });
     }
 
     return NextResponse.json({ error: "Action inconnue" }, { status: 400 });

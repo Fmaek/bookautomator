@@ -1,7 +1,19 @@
-﻿"use client";
+"use client";
 import { useState, useEffect, useRef } from "react";
-import { Headphones, Play, Pause, Square, Download, ChevronLeft, ChevronRight, Volume2 } from "lucide-react";
+import { Headphones, Play, Pause, Square, Download, ChevronLeft, ChevronRight, Volume2, Globe } from "lucide-react";
 import { getBooks, type Book } from "@/lib/books";
+
+const LANG_OPTIONS = [
+  { code: "fr-FR", label: "Français (France)" },
+  { code: "fr-CA", label: "Français (Canada)" },
+  { code: "en-US", label: "English (US)" },
+  { code: "en-GB", label: "English (UK)" },
+  { code: "es-ES", label: "Español" },
+  { code: "de-DE", label: "Deutsch" },
+  { code: "pt-BR", label: "Português" },
+  { code: "it-IT", label: "Italiano" },
+  { code: "ar-SA", label: "العربية" },
+];
 
 export default function AudiobookPage() {
   const [books, setBooks] = useState<Book[]>([]);
@@ -10,6 +22,7 @@ export default function AudiobookPage() {
   const [playing, setPlaying] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [selectedVoice, setSelectedVoice] = useState("");
+  const [lang, setLang] = useState("fr-FR");
   const [rate, setRate] = useState(1);
   const [pitch, setPitch] = useState(1);
   const [progress, setProgress] = useState(0);
@@ -20,16 +33,22 @@ export default function AudiobookPage() {
     setBooks(getBooks());
     const load = () => {
       const v = window.speechSynthesis.getVoices();
-      const fr = v.filter(x => x.lang.startsWith("fr") || x.lang.startsWith("en"));
-      setVoices(fr.length > 0 ? fr : v.slice(0, 10));
+      setVoices(v);
     };
     load();
     window.speechSynthesis.onvoiceschanged = load;
     return () => { window.speechSynthesis.cancel(); if (intervalRef.current) clearInterval(intervalRef.current); };
   }, []);
 
+  // When lang changes, reset voice selection
+  useEffect(() => { setSelectedVoice(""); }, [lang]);
+
   const book = books.find(b => b.id === selectedId);
   const chapter = book?.chapters[chapterIdx];
+
+  // Filter voices for selected language
+  const langVoices = voices.filter(v => v.lang.startsWith(lang.split("-")[0]));
+  const otherVoices = voices.filter(v => !v.lang.startsWith(lang.split("-")[0])).slice(0, 8);
 
   const stop = () => {
     window.speechSynthesis.cancel();
@@ -42,7 +61,12 @@ export default function AudiobookPage() {
     if (!chapter?.content) return;
     window.speechSynthesis.cancel();
     const utter = new SpeechSynthesisUtterance(chapter.content);
-    const voice = voices.find(v => v.name === selectedVoice) || voices[0];
+    // Set language explicitly so the browser picks a matching voice
+    utter.lang = lang;
+    const voice = voices.find(v => v.name === selectedVoice)
+      || voices.find(v => v.lang === lang)
+      || voices.find(v => v.lang.startsWith(lang.split("-")[0]))
+      || undefined;
     if (voice) utter.voice = voice;
     utter.rate = rate;
     utter.pitch = pitch;
@@ -76,9 +100,6 @@ export default function AudiobookPage() {
     URL.revokeObjectURL(url);
   };
 
-  const frVoices = voices.filter(v => v.lang.startsWith("fr"));
-  const otherVoices = voices.filter(v => !v.lang.startsWith("fr"));
-
   return (
     <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
@@ -88,7 +109,7 @@ export default function AudiobookPage() {
           </div>
           <h1 className="text-2xl md:text-3xl font-bold text-white">Audiobook Studio</h1>
         </div>
-        <p className="text-white/50">Écoute tes chapitres · Choix de voix · Export du script</p>
+        <p className="text-white/50">Écoute tes chapitres · Français & 8 autres langues · Export du script</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
@@ -117,13 +138,40 @@ export default function AudiobookPage() {
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6 space-y-4">
             <h2 className="text-white font-semibold flex items-center gap-2"><Volume2 size={15} /> Paramètres voix</h2>
 
+            {/* Language selector */}
+            <div>
+              <label className="text-white/60 text-xs mb-1.5 flex items-center gap-1 block"><Globe size={11} /> Langue de lecture</label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {LANG_OPTIONS.map(l => (
+                  <button key={l.code} onClick={() => { setLang(l.code); stop(); }}
+                    className={`py-2 px-3 rounded-xl text-xs border transition-all text-left ${lang === l.code ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300 font-medium" : "border-white/[0.06] text-white/40 hover:border-white/10 hover:text-white"}`}>
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+              {langVoices.length === 0 && (
+                <p className="text-amber-400/70 text-xs mt-2 p-2 bg-amber-500/8 border border-amber-500/15 rounded-lg">
+                  ⚠ Aucune voix {LANG_OPTIONS.find(l2 => l2.code === lang)?.label} installée sur ce navigateur — la voix par défaut sera utilisée.
+                </p>
+              )}
+            </div>
+
+            {/* Voice picker */}
             <div>
               <label className="text-white/60 text-xs mb-1.5 block">Voix</label>
               <select value={selectedVoice} onChange={e => setSelectedVoice(e.target.value)}
                 className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none">
-                <option value="">Voix par défaut</option>
-                {frVoices.length > 0 && <optgroup label="Français">{frVoices.map(v => <option key={v.name} value={v.name}>{v.name}</option>)}</optgroup>}
-                {otherVoices.length > 0 && <optgroup label="Autres">{otherVoices.map(v => <option key={v.name} value={v.name}>{v.name} ({v.lang})</option>)}</optgroup>}
+                <option value="">Voix automatique ({LANG_OPTIONS.find(l2 => l2.code === lang)?.label})</option>
+                {langVoices.length > 0 && (
+                  <optgroup label={`Voix ${LANG_OPTIONS.find(l2 => l2.code === lang)?.label}`}>
+                    {langVoices.map(v => <option key={v.name} value={v.name}>{v.name}</option>)}
+                  </optgroup>
+                )}
+                {otherVoices.length > 0 && (
+                  <optgroup label="Autres voix disponibles">
+                    {otherVoices.map(v => <option key={v.name} value={v.name}>{v.name} ({v.lang})</option>)}
+                  </optgroup>
+                )}
               </select>
             </div>
 
@@ -151,7 +199,7 @@ export default function AudiobookPage() {
             <>
               <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
                 <h3 className="text-white font-semibold mb-1">{chapter.title}</h3>
-                <p className="text-white/40 text-xs mb-4">{chapter.content.split(" ").length} mots · ~{Math.round(chapter.content.split(" ").length / (rate * 150))} min à écouter</p>
+                <p className="text-white/40 text-xs mb-4">{chapter.content.split(" ").length} mots · ~{Math.round(chapter.content.split(" ").length / (rate * 150))} min · {LANG_OPTIONS.find(l => l.code === lang)?.label}</p>
 
                 <div className="w-full bg-white/5 rounded-full h-1.5 mb-5">
                   <div className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300" style={{ width: `${progress}%` }} />
@@ -197,4 +245,3 @@ export default function AudiobookPage() {
     </div>
   );
 }
-

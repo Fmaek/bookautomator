@@ -412,6 +412,18 @@ export default function CoverPage() {
       {tab === "canvas" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6 space-y-4 md:space-y-5">
+
+            {books.length > 0 && (
+              <div>
+                <label className="text-white/60 text-sm mb-2 flex items-center gap-1 block"><BookOpen size={13} /> Importer depuis un livre</label>
+                <select value={assignTarget} onChange={e => handleAssignSelect(e.target.value)}
+                  className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none">
+                  <option value="">Choisir un livre existant...</option>
+                  {books.map(b => <option key={b.id} value={b.id}>{b.title}</option>)}
+                </select>
+              </div>
+            )}
+
             <div>
               <label className="text-white/60 text-sm mb-2 block">Titre du livre</label>
               <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Mon Livre Incroyable" className={ic} />
@@ -500,6 +512,18 @@ export default function CoverPage() {
       {tab === "ai" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6 space-y-4 md:space-y-5">
+
+            {books.length > 0 && (
+              <div>
+                <label className="text-white/60 text-sm mb-2 flex items-center gap-1 block"><BookOpen size={13} /> Importer depuis un livre existant</label>
+                <select value={assignTarget} onChange={e => handleAssignSelect(e.target.value)}
+                  className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none">
+                  <option value="">Choisir un livre...</option>
+                  {books.map(b => <option key={b.id} value={b.id}>{b.title} — {b.category}</option>)}
+                </select>
+              </div>
+            )}
+
             <div>
               <label className="text-white/60 text-sm mb-2 block">Titre du livre <span className="text-white/30">(affiché sur la couverture)</span></label>
               <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Mon Livre" className={ic} />
@@ -537,6 +561,7 @@ export default function CoverPage() {
                 className="flex items-center justify-center gap-2 px-4 py-3 bg-white/5 border border-white/10 hover:bg-white/10 disabled:opacity-50 text-white/70 rounded-xl text-sm font-medium transition-all"
                 title="Générer 3 variantes A/B/C">
                 <Grid3x3 size={15} />
+                <span className="text-xs">A/B/C</span>
               </button>
             </div>
 
