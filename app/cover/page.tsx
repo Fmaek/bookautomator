@@ -17,10 +17,12 @@ const TEMPLATES = [
 
 const DECOS = ["cercles", "lignes", "points", "aucune"] as const;
 const AI_MODELS = [
-  { id: "flux",       label: "FLUX (recommandé)" },
-  { id: "turbo",      label: "Turbo (rapide)"    },
-  { id: "qwen-vl-max",label: "Qwen (Alibaba)"    },
-  { id: "gptimage1",  label: "GPT Image"         },
+  { id: "flux",           label: "FLUX (recommandé)" },
+  { id: "flux-realism",   label: "FLUX Réalisme"     },
+  { id: "flux-anime",     label: "FLUX Anime"        },
+  { id: "flux-3d",        label: "FLUX 3D"           },
+  { id: "turbo",          label: "Turbo (rapide)"    },
+  { id: "any-dark",       label: "Dark Premium"      },
 ];
 
 const W = 512, H = 768;
@@ -223,16 +225,18 @@ export default function CoverPage() {
   const [tpl, setTpl]         = useState(TEMPLATES[0]);
   const [deco, setDeco]       = useState<typeof DECOS[number]>("cercles");
   const [aiPrompt, setAiPrompt]   = useState("");
-  const [aiUrl, setAiUrl]         = useState("");
+  const [aiUrl, setAiUrl]         = useState("");       // blob: URL
   const [aiLoading, setAiLoading] = useState(false);
   const [aiReady, setAiReady]     = useState(false);
+  const [aiError, setAiError]     = useState("");
   const [aiModel, setAiModel]     = useState("flux");
   const [books, setBooks]         = useState<Book[]>([]);
   const [assignTarget, setAssignTarget] = useState("");
   const [assigned, setAssigned]   = useState(false);
   const [show3D, setShow3D]       = useState(false);
-  const [abVariants, setAbVariants] = useState<string[]>([]);
+  const [abVariants, setAbVariants] = useState<{ blob: string; seed: number }[]>([]);
   const [abLoading, setAbLoading] = useState(false);
+  const [abLoadedCount, setAbLoadedCount] = useState(0);
   const [qrUrl, setQrUrl]         = useState("");
   const [showQr, setShowQr]       = useState(false);
   const canvasRef   = useRef<HTMLCanvasElement>(null);
@@ -265,11 +269,13 @@ export default function CoverPage() {
   useEffect(() => { redraw(); }, [redraw]);
 
   // Redraw AI canvas overlay when title/author changes after image loaded
+  // aiUrl is now a blob: URL (same-origin) — no crossOrigin needed
   useEffect(() => {
     if (!aiReady || !aiUrl || !aiCanvasRef.current) return;
     const img = new window.Image();
-    img.crossOrigin = "anonymous";
+    // blob: URLs are same-origin, no crossOrigin attribute needed
     img.onload = () => { if (aiCanvasRef.current) drawAiOverlay(aiCanvasRef.current, img, title, author); };
+    img.onerror = () => { /* blob may have been revoked — ignore */ };
     img.src = aiUrl;
   }, [title, author, aiReady, aiUrl]);
 
@@ -301,38 +307,85 @@ export default function CoverPage() {
     setTimeout(() => setAssigned(false), 2500);
   };
 
-  const buildPromptUrl = (seed: number) => {
-    const prompt = encodeURIComponent(
-      `Professional book cover illustration, no text, no letters, no words. ${aiPrompt || `Theme: "${title}"`}. Cinematic lighting, dramatic atmosphere, portrait 3:4 format, bestseller quality, ultra HD photorealistic.`
-    );
-    return `https://image.pollinations.ai/prompt/${prompt}?width=512&height=768&seed=${seed}&model=${aiModel}&nologo=true&enhance=true`;
+  const buildProxyUrl = (seed: number) => {
+    const prompt = aiPrompt || `Theme: "${title}"`;
+    return `/api/generate-cover?prompt=${encodeURIComponent(prompt)}&model=${aiModel}&seed=${seed}`;
   };
 
-  const generateAI = () => {
+  /** Fetch image via our proxy (avoids CORS), draw onto canvas */
+  const fetchAndDraw = async (proxyUrl: string): Promise<string> => {
+    const res = await fetch(proxyUrl);
+    if (!res.ok) throw new Error(`Erreur ${res.status}`);
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  };
+
+  const drawBlobOnCanvas = (blobUrl: string) => {
+    const img = new window.Image();
+    img.onload = () => {
+      if (aiCanvasRef.current) drawAiOverlay(aiCanvasRef.current, img, title, author);
+      // Don't revoke yet — the useEffect needs the URL to redraw on title/author change
+      setAiLoading(false);
+      setAiReady(true);
+      setAiUrl(blobUrl); // keep blob URL in state for redraw useEffect
+    };
+    img.onerror = () => {
+      setAiError("Impossible d'afficher l'image. Change de modèle ou réessaie.");
+      setAiLoading(false);
+    };
+    img.src = blobUrl;
+  };
+
+  const generateAI = async () => {
     if (!aiPrompt && !title) return;
     setAiLoading(true);
     setAiReady(false);
+    setAiError("");
     setAiUrl("");
     setAbVariants([]);
-    setAiUrl(buildPromptUrl(Math.floor(Math.random() * 99999)));
+    try {
+      const blobUrl = await fetchAndDraw(buildProxyUrl(Math.floor(Math.random() * 99999)));
+      drawBlobOnCanvas(blobUrl); // sets aiUrl + aiReady inside onload
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Génération échouée";
+      setAiError(`Erreur : ${msg}. Vérifie ta connexion ou change de modèle.`);
+      setAiLoading(false);
+    }
   };
 
-  const generateVariants = () => {
+  const generateVariants = async () => {
     if (!aiPrompt && !title) return;
     setAbLoading(true);
-    setAbVariants([
-      buildPromptUrl(Math.floor(Math.random() * 99999)),
-      buildPromptUrl(Math.floor(Math.random() * 99999)),
-      buildPromptUrl(Math.floor(Math.random() * 99999)),
-    ]);
+    setAbVariants([]);
+    setAbLoadedCount(0);
+    const seeds = [
+      Math.floor(Math.random() * 99999),
+      Math.floor(Math.random() * 99999),
+      Math.floor(Math.random() * 99999),
+    ];
+    try {
+      // Fetch all 3 in parallel
+      const blobs = await Promise.all(
+        seeds.map(async (seed) => {
+          const res = await fetch(buildProxyUrl(seed));
+          if (!res.ok) throw new Error(`${res.status}`);
+          const blob = await res.blob();
+          return { blob: URL.createObjectURL(blob), seed };
+        })
+      );
+      setAbVariants(blobs);
+    } catch {
+      setAiError("Impossible de générer les variantes. Réessaie.");
+    }
+    setAbLoading(false);
   };
 
-  const selectVariant = (url: string) => {
+  const selectVariant = (blobUrl: string) => {
     setAiLoading(true);
     setAiReady(false);
-    setAiUrl(url);
+    setAiError("");
     setAbVariants([]);
-    setAbLoading(false);
+    drawBlobOnCanvas(blobUrl);
   };
 
   const applyQrCode = async () => {
@@ -352,15 +405,6 @@ export default function CoverPage() {
       qrImg.src = qrDataUrl;
     } catch (e) { console.error(e); }
     setShowQr(false);
-  };
-
-  const handleAiLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = e.currentTarget;
-    if (aiCanvasRef.current) {
-      drawAiOverlay(aiCanvasRef.current, img, title, author);
-    }
-    setAiLoading(false);
-    setAiReady(true);
   };
 
   const ic = "w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 text-sm focus:outline-none focus:border-purple-500/50";
@@ -552,18 +596,24 @@ export default function CoverPage() {
             </div>
 
             <div className="flex gap-2">
-              <button onClick={generateAI} disabled={aiLoading || (!aiPrompt && !title)}
+              <button onClick={generateAI} disabled={aiLoading || abLoading || (!aiPrompt && !title)}
                 className="flex-1 flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 text-white rounded-xl font-medium transition-all">
                 {aiLoading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Wand2 size={16} />}
-                {aiLoading ? "Génération..." : "Générer"}
+                {aiLoading ? "Génération en cours..." : "Générer"}
               </button>
-              <button onClick={generateVariants} disabled={abLoading || (!aiPrompt && !title)}
+              <button onClick={generateVariants} disabled={aiLoading || abLoading || (!aiPrompt && !title)}
                 className="flex items-center justify-center gap-2 px-4 py-3 bg-white/5 border border-white/10 hover:bg-white/10 disabled:opacity-50 text-white/70 rounded-xl text-sm font-medium transition-all"
                 title="Générer 3 variantes A/B/C">
                 <Grid3x3 size={15} />
                 <span className="text-xs">A/B/C</span>
               </button>
             </div>
+
+            {aiError && (
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
+                <p className="text-red-400 text-xs">{aiError}</p>
+              </div>
+            )}
 
             {aiReady && (
               <>
@@ -601,14 +651,27 @@ export default function CoverPage() {
 
           {/* AI Preview */}
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 flex flex-col items-center justify-center min-h-[500px]">
-            {aiLoading && !aiUrl && (
+
+            {/* Loading spinner */}
+            {aiLoading && (
               <div className="text-center">
                 <div className="w-16 h-16 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                 <p className="text-white font-medium">Génération en cours...</p>
-                <p className="text-white/40 text-sm mt-1">Patience, peut prendre 1-5 minutes selon le modèle</p>
+                <p className="text-white/40 text-sm mt-1">30 secondes à 2 minutes selon le modèle</p>
               </div>
             )}
-            {!aiLoading && !aiUrl && (
+
+            {/* A/B loading spinner */}
+            {abLoading && (
+              <div className="text-center">
+                <div className="w-16 h-16 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-white font-medium">Génération des 3 variantes...</p>
+                <p className="text-white/40 text-sm mt-1">Téléchargement en parallèle, ~1-2 minutes</p>
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!aiLoading && !abLoading && !aiReady && !abVariants.length && (
               <div className="text-center">
                 <div className="w-32 h-44 rounded-lg border-2 border-dashed border-white/10 flex items-center justify-center mb-4 mx-auto">
                   <Wand2 size={32} className="text-white/20" />
@@ -618,43 +681,28 @@ export default function CoverPage() {
               </div>
             )}
 
-            {/* Hidden img tag to trigger load — canvas shows the result */}
-            {aiUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={aiUrl} alt="" onLoad={handleAiLoad} onError={() => setAiLoading(false)}
-                className="hidden" crossOrigin="anonymous" />
-            )}
-
-            {/* AI canvas with overlay */}
+            {/* AI canvas — drawn server-side via proxy, no CORS issue */}
             <canvas ref={aiCanvasRef}
-              style={{ width: 224, height: 336, borderRadius: "12px", display: aiReady ? "block" : "none" }}
+              style={{ width: 224, height: 336, borderRadius: "12px", display: aiReady && !abVariants.length ? "block" : "none" }}
               className="shadow-2xl shadow-purple-500/30 border border-white/10 mb-4" />
 
-            {aiLoading && aiUrl && (
-              <div className="text-center mt-4">
-                <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                <p className="text-white/40 text-sm">Chargement de l&apos;image...</p>
-              </div>
-            )}
-
-            {aiReady && !abVariants.length && (
+            {aiReady && !abVariants.length && !aiLoading && (
               <button onClick={generateAI}
                 className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-white/60 rounded-xl text-sm mt-2">
                 <RefreshCw size={13} /> Regénérer
               </button>
             )}
 
-            {/* A/B/C Variants grid */}
-            {abVariants.length > 0 && (
+            {/* A/B/C Variants grid — using blob URLs (no CORS) */}
+            {abVariants.length > 0 && !abLoading && (
               <div className="w-full">
                 <p className="text-white/50 text-xs mb-3 text-center">Clique pour sélectionner une variante</p>
                 <div className="grid grid-cols-3 gap-2 md:gap-3">
-                  {abVariants.map((url, i) => (
+                  {abVariants.map(({ blob }, i) => (
                     <div key={i} className="relative group">
-                      <button onClick={() => selectVariant(url)} className="w-full">
+                      <button onClick={() => selectVariant(blob)} className="w-full">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={url} alt={`Variante ${String.fromCharCode(65 + i)}`}
-                          onLoad={() => i === abVariants.length - 1 && setAbLoading(false)}
+                        <img src={blob} alt={`Variante ${String.fromCharCode(65 + i)}`}
                           className="w-full rounded-xl border border-white/10 group-hover:border-purple-500/60 transition-all" />
                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all rounded-xl flex items-center justify-center">
                           <span className="text-white font-bold text-sm">Choisir {String.fromCharCode(65 + i)}</span>
@@ -666,7 +714,6 @@ export default function CoverPage() {
                     </div>
                   ))}
                 </div>
-                {abLoading && <p className="text-white/30 text-xs text-center mt-2">Chargement des variantes...</p>}
               </div>
             )}
           </div>
