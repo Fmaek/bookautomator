@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useEffect } from "react";
 import { DollarSign, TrendingUp, Plus, Trash2, BookOpen, Target, Award } from "lucide-react";
 import { getBooks, saveBook, type Book } from "@/lib/books";
@@ -67,21 +67,21 @@ export default function SalesPage() {
   const ic = "bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500/50";
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-1">Ventes & Revenus</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Ventes & Revenus</h1>
         <p className="text-white/50">Suivi manuel de tes ventes par plateforme</p>
       </div>
 
       {/* Global stats */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
         {[
           { label: "Revenus totaux", value: `${globalRevenue.toFixed(2)} €`, icon: DollarSign, color: "text-emerald-400" },
           { label: "Unités vendues", value: globalUnits.toString(), icon: BookOpen, color: "text-blue-400" },
           { label: "Livres actifs", value: allBookSales.length.toString(), icon: TrendingUp, color: "text-purple-400" },
           { label: "Best-seller", value: bestSeller?.book.title.substring(0, 20) || "—", icon: Award, color: "text-amber-400" },
         ].map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+          <div key={label} className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
             <div className={`${color} mb-2`}><Icon size={20} /></div>
             <p className="text-white font-bold text-xl">{value}</p>
             <p className="text-white/40 text-xs mt-1">{label}</p>
@@ -89,10 +89,10 @@ export default function SalesPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
         {/* Left: Entry form + per-book entries */}
         <div className="space-y-5">
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
             <h2 className="text-white font-semibold mb-4">Saisir des ventes</h2>
 
             <div className="mb-4">
@@ -111,7 +111,7 @@ export default function SalesPage() {
               </button>
             ) : (
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-white/60 text-xs mb-1 block">Date</label>
                     <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className={ic} />
@@ -124,7 +124,7 @@ export default function SalesPage() {
                     </select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-white/60 text-xs mb-1 block">Unités</label>
                     <input type="number" value={form.units} onChange={e => setForm(f => ({ ...f, units: e.target.value }))} placeholder="10" className={ic} />
@@ -148,7 +148,7 @@ export default function SalesPage() {
 
           {/* Entries list */}
           {entries.length > 0 && (
-            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-white font-semibold text-sm">Historique</h3>
                 <div className="text-right">
@@ -179,7 +179,7 @@ export default function SalesPage() {
         <div className="space-y-5">
           {/* Monthly bar chart for selected book */}
           {monthlyData.length > 0 && (
-            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
               <h3 className="text-white font-semibold mb-5 text-sm">Revenus mensuels</h3>
               <div className="flex items-end gap-2 h-32">
                 {monthlyData.map(([month, rev]) => (
@@ -196,7 +196,7 @@ export default function SalesPage() {
 
           {/* All books ranking */}
           {allBookSales.length > 0 && (
-            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
               <h3 className="text-white font-semibold mb-4 text-sm flex items-center gap-2">
                 <Target size={14} className="text-amber-400" /> Classement des livres
               </h3>
@@ -235,3 +235,4 @@ export default function SalesPage() {
     </div>
   );
 }
+

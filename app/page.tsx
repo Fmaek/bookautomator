@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import Link from "next/link";
 import { TrendingUp, BookOpen, Image, Send, Star, Sparkles, Flame, ArrowRight } from "lucide-react";
 
@@ -26,7 +26,7 @@ const workflow = [
 
 export default function Dashboard() {
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-10">
         <div className="flex items-center gap-2 mb-2">
           <Sparkles size={16} className="text-purple-400" />
@@ -42,13 +42,13 @@ export default function Dashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
         {stats.map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
+          <div key={label} className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-4 md:p-5">
             <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center mb-3`}>
               <Icon size={18} className="text-white" />
             </div>
-            <p className="text-3xl font-bold text-white mb-1">{value}</p>
+            <p className="text-2xl md:text-3xl font-bold text-white mb-1">{value}</p>
             <p className="text-white/50 text-sm">{label}</p>
           </div>
         ))}
@@ -59,7 +59,7 @@ export default function Dashboard() {
         <Flame size={18} className="text-orange-400" />
         Actions Rapides
       </h2>
-      <div className="grid grid-cols-2 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mb-8">
         {quickActions.map(({ href, icon: Icon, title, desc, border, badge, badgeColor }) => (
           <Link key={href} href={href}>
             <div className={`bg-white/[0.03] border ${border} rounded-2xl p-6 hover:bg-white/[0.06] transition-all duration-200 cursor-pointer group`}>
@@ -78,7 +78,7 @@ export default function Dashboard() {
       </div>
 
       {/* Workflow */}
-      <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+      <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
         <h2 className="text-white font-semibold mb-5 flex items-center gap-2">
           <Sparkles size={16} className="text-purple-400" />
           Workflow Complet — Du sujet viral au livre publié
@@ -101,3 +101,4 @@ export default function Dashboard() {
     </div>
   );
 }
+

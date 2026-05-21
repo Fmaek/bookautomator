@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useEffect } from "react";
 import { Zap, Sparkles, Loader2, Copy, CheckCircle } from "lucide-react";
 import { getBooks, type Book } from "@/lib/books";
@@ -68,18 +68,18 @@ export default function HooksPage() {
   const ic = "w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 text-sm focus:outline-none focus:border-purple-500/50";
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-1">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-500 to-orange-500 flex items-center justify-center">
             <Zap size={20} className="text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white">Viral Hooks Lab</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-white">Viral Hooks Lab</h1>
         </div>
         <p className="text-white/50">20 accroches virales · 5 types psychologiques · Prêtes pour TikTok, Instagram, email</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         <div className="space-y-4">
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5 space-y-4">
             <h2 className="text-white font-semibold">Configuration</h2>
@@ -153,7 +153,7 @@ export default function HooksPage() {
               })}
             </div>
           ) : rawHooks ? (
-            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-white font-semibold text-sm">Accroches générées</h3>
                 <button onClick={() => navigator.clipboard.writeText(rawHooks)} className="text-white/30 hover:text-white text-xs"><Copy size={12} /></button>
@@ -172,3 +172,4 @@ export default function HooksPage() {
     </div>
   );
 }
+

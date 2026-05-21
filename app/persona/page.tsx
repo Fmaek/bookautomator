@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState } from "react";
 import { Drama, Sparkles, Loader2, Copy, Image as ImageIcon } from "lucide-react";
 
@@ -47,20 +47,20 @@ export default function PersonaPage() {
   const ic = "w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 text-sm focus:outline-none";
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-1">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center">
             <Drama size={20} className="text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white">Persona IA</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-white">Persona IA</h1>
         </div>
         <p className="text-white/50">Crée un auteur fictif crédible · Bio · Histoire · Profils sociaux · Photo IA</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
         <div className="space-y-5">
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 space-y-4">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6 space-y-4">
             <h2 className="text-white font-semibold">Créer le persona</h2>
 
             <div>
@@ -118,7 +118,7 @@ export default function PersonaPage() {
           )}
         </div>
 
-        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
           {result ? (
             <>
               <div className="flex items-center justify-between mb-4">
@@ -144,3 +144,4 @@ export default function PersonaPage() {
     </div>
   );
 }
+

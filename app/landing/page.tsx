@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useEffect } from "react";
 import { Globe, Loader2, Download, Copy, Eye, EyeOff, Sparkles } from "lucide-react";
 import { getBooks, type Book } from "@/lib/books";
@@ -125,9 +125,9 @@ export default function LandingPage() {
   const ic = "w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 text-sm focus:outline-none focus:border-purple-500/50";
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-1">Générateur de Page de Vente</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Générateur de Page de Vente</h1>
         <p className="text-white/50">Copywriting IA · Export HTML prêt à publier · Inclut couverture + prix</p>
       </div>
 
@@ -150,8 +150,8 @@ export default function LandingPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-8">
-        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6 space-y-4">
           <h2 className="text-white font-semibold">Configuration</h2>
 
           <div>
@@ -202,7 +202,7 @@ export default function LandingPage() {
           )}
         </div>
 
-        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
           {content ? (
             <>
               <div className="flex items-center justify-between mb-4">
@@ -230,3 +230,4 @@ export default function LandingPage() {
     </div>
   );
 }
+

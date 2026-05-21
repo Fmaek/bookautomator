@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useEffect } from "react";
 import { Network, Sparkles, Loader2, Copy, Download } from "lucide-react";
 import { getBooks, type Book } from "@/lib/books";
@@ -48,19 +48,19 @@ export default function IpExpansionPage() {
   ];
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-1">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
             <Network size={20} className="text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white">IP Expansion Planner</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-white">IP Expansion Planner</h1>
         </div>
         <p className="text-white/50">Transforme un livre en univers de produits · Formations · Physique · Podcast · Licences</p>
       </div>
 
       {/* Phase roadmap visual */}
-      <div className="grid grid-cols-4 gap-3 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
         {PHASES.map((ph, i) => (
           <div key={i} className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
@@ -76,9 +76,9 @@ export default function IpExpansionPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
         <div className="space-y-5">
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 space-y-4">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6 space-y-4">
             <h2 className="text-white font-semibold">Ton livre à développer</h2>
             <select value={selectedId} onChange={e => { setSelectedId(e.target.value); setResult(""); }}
               className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none">
@@ -105,7 +105,7 @@ export default function IpExpansionPage() {
           </div>
         </div>
 
-        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
           {result ? (
             <>
               <div className="flex items-center justify-between mb-4">
@@ -137,3 +137,4 @@ export default function IpExpansionPage() {
     </div>
   );
 }
+

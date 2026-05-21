@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useEffect, useRef } from "react";
 import {
   Library, BookOpen, Plus, Search, Edit3, Trash2, Send,
@@ -109,10 +109,10 @@ export default function LibraryPage() {
   };
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-1">Ma Bibliothèque</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Ma Bibliothèque</h1>
           <p className="text-white/50">Tous tes livres — lis, modifie, publie</p>
         </div>
         <div className="flex gap-2">
@@ -167,7 +167,7 @@ export default function LibraryPage() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
         {[
           { label: "Total", value: books.length, color: "text-white" },
           { label: "Brouillons", value: books.filter(b => b.status === "brouillon").length, color: "text-yellow-400" },
@@ -314,3 +314,4 @@ export default function LibraryPage() {
     </div>
   );
 }
+

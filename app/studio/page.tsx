@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import React, { useState, useRef, Suspense, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
@@ -468,7 +468,7 @@ function StudioContent() {
   );
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
 
       {/* Dialogue IA modal */}
       {dialogueIdx !== null && (
@@ -617,7 +617,7 @@ function StudioContent() {
 
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-1">Studio d&apos;Écriture</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Studio d&apos;Écriture</h1>
           <p className="text-white/50">Romans · Non-fiction · Poésie · 3 modes IA</p>
         </div>
         {step === "done" && (
@@ -640,7 +640,7 @@ function StudioContent() {
 
       {/* Description panel */}
       {showDescription && bookDescription && (
-        <div className="mb-6 bg-amber-500/[0.08] border border-amber-500/20 rounded-2xl p-6">
+        <div className="mb-6 bg-amber-500/[0.08] border border-amber-500/20 rounded-2xl p-4 md:p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-amber-300 font-semibold flex items-center gap-2">
               <AlignLeft size={15} /> Descriptions de vente générées
@@ -696,7 +696,7 @@ function StudioContent() {
       )}
 
       {/* Mode selector */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-8">
         {MODES.map(({ id, icon: Icon, label, desc, color }) => (
           <button key={id} onClick={() => { setMode(id); setStep("config"); setChapters([]); setSaved(false); setShowDescription(false); }}
             className={`bg-white/[0.03] border rounded-2xl p-5 text-left transition-all duration-200 ${mode === id ? "border-purple-500/50" : "border-white/[0.06] hover:border-white/10"}`}>
@@ -708,7 +708,7 @@ function StudioContent() {
       </div>
 
       {(mode === "auto" || mode === "hybrid") && (
-        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
           {step === "config" && (
             <div className="space-y-4">
               <h2 className="text-white font-semibold text-lg">Configuration du livre</h2>
@@ -717,7 +717,7 @@ function StudioContent() {
                 <input value={title} onChange={e => setTitle(e.target.value)}
                   placeholder="Ex: Gagner 1000€/mois en ligne depuis l'Afrique" className={inputClass} />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                 <div>
                   <label className="text-white/60 text-sm mb-2 block">Catégorie</label>
                   <select value={category} onChange={e => setCategory(e.target.value)} className={selectClass}>
@@ -746,7 +746,7 @@ function StudioContent() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                 <div>
                   <label className="text-white/60 text-sm mb-2 flex items-center gap-1"><Globe size={13} /> Langue</label>
                   <select value={language} onChange={e => setLanguage(e.target.value)}
@@ -1008,7 +1008,7 @@ function StudioContent() {
 
       {mode === "assisted" && (
         <div className="space-y-4">
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
             <div className="mb-4">
               <label className="text-white/60 text-sm mb-2 block">Titre du projet (pour la sauvegarde)</label>
               <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Mon livre..." className={inputClass} />
@@ -1050,3 +1050,4 @@ export default function StudioPage() {
     </Suspense>
   );
 }
+

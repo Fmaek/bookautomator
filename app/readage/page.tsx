@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useEffect } from "react";
 import { BookMarked, Sparkles, Loader2, Copy, ArrowRight } from "lucide-react";
 import { getBooks, type Book } from "@/lib/books";
@@ -50,20 +50,20 @@ export default function ReadAgePage() {
   const level = LEVELS.find(l => l.id === targetLevel)!;
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-1">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-600 to-blue-600 flex items-center justify-center">
             <BookMarked size={20} className="text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white">Reading Age Calibrator</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-white">Reading Age Calibrator</h1>
         </div>
         <p className="text-white/50">Adapte le niveau de lecture de ton contenu · Enfant → Expert · Même message, style différent</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
         <div className="space-y-5">
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 space-y-4">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6 space-y-4">
             <h2 className="text-white font-semibold">Source du texte</h2>
 
             <div className="flex gap-2">
@@ -121,14 +121,14 @@ export default function ReadAgePage() {
 
         <div className="space-y-4">
           {sourceText && !useCustom && (
-            <div className="bg-white/[0.02] border border-white/[0.05] rounded-2xl p-5">
+            <div className="bg-white/[0.02] border border-white/[0.05] rounded-2xl p-4 md:p-5">
               <p className="text-white/40 text-xs font-medium mb-2">Texte original</p>
               <p className="text-white/40 text-sm leading-relaxed line-clamp-4">{sourceText}</p>
             </div>
           )}
 
           {result ? (
-            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <ArrowRight size={14} className="text-sky-400" />
@@ -156,3 +156,4 @@ export default function ReadAgePage() {
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useEffect } from "react";
 import {
   Camera, AtSign, Briefcase, Mail, Sparkles,
@@ -134,9 +134,9 @@ export default function MarketingPage() {
   ] as const;
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-1">Marketing Hub</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Marketing Hub</h1>
         <p className="text-white/50">Posts, emails, SEO, calendrier — tout pour vendre ton livre</p>
       </div>
 
@@ -150,7 +150,7 @@ export default function MarketingPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         {/* Left: book + config */}
         <div className="space-y-4">
           {books.length > 0 && (
@@ -280,3 +280,4 @@ export default function MarketingPage() {
     </div>
   );
 }
+

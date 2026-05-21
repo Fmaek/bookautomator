@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useRef, useEffect, useCallback } from "react";
 import QRCode from "qrcode";
 import { Download, Wand2, Layout, RefreshCw, Palette, Sparkles, BookOpen, Check, Grid3x3, QrCode } from "lucide-react";
@@ -393,9 +393,9 @@ export default function CoverPage() {
   ) : null;
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-1">Générateur de Couvertures</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Générateur de Couvertures</h1>
         <p className="text-white/50">Création instantanée par Canvas · Génération IA · Assignation au livre</p>
       </div>
 
@@ -410,8 +410,8 @@ export default function CoverPage() {
 
       {/* ── CANVAS TAB ─────────────────────────────────────────────── */}
       {tab === "canvas" && (
-        <div className="grid grid-cols-2 gap-8">
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 space-y-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6 space-y-4 md:space-y-5">
             <div>
               <label className="text-white/60 text-sm mb-2 block">Titre du livre</label>
               <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Mon Livre Incroyable" className={ic} />
@@ -427,7 +427,7 @@ export default function CoverPage() {
 
             <div>
               <label className="text-white/60 text-sm mb-2 flex items-center gap-1"><Palette size={13} /> Thème</label>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {TEMPLATES.map(t => (
                   <button key={t.id} onClick={() => setTpl(t)}
                     className={`rounded-xl p-1.5 border transition-all ${tpl.id === t.id ? "border-purple-500/70 scale-105" : "border-white/[0.06]"}`}>
@@ -498,8 +498,8 @@ export default function CoverPage() {
 
       {/* ── AI TAB ─────────────────────────────────────────────────── */}
       {tab === "ai" && (
-        <div className="grid grid-cols-2 gap-8">
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 space-y-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6 space-y-4 md:space-y-5">
             <div>
               <label className="text-white/60 text-sm mb-2 block">Titre du livre <span className="text-white/30">(affiché sur la couverture)</span></label>
               <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Mon Livre" className={ic} />
@@ -623,7 +623,7 @@ export default function CoverPage() {
             {abVariants.length > 0 && (
               <div className="w-full">
                 <p className="text-white/50 text-xs mb-3 text-center">Clique pour sélectionner une variante</p>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-3 gap-2 md:gap-3">
                   {abVariants.map((url, i) => (
                     <div key={i} className="relative group">
                       <button onClick={() => selectVariant(url)} className="w-full">
@@ -650,4 +650,5 @@ export default function CoverPage() {
     </div>
   );
 }
+
 

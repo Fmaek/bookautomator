@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useEffect } from "react";
 import {
   CheckSquare, CheckCircle, Circle, AlertCircle, ChevronRight, Sparkles,
@@ -134,9 +134,9 @@ export default function ChecklistPage() {
     : [];
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-1">Contrôle Qualité</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Contrôle Qualité</h1>
         <p className="text-white/50">Analyse IA automatique + checklist complète avant publication</p>
       </div>
 
@@ -181,7 +181,7 @@ export default function ChecklistPage() {
       </div>
 
       {/* Stats bar */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-6">
         <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5 col-span-2">
           <div className="flex items-center justify-between mb-3">
             <span className="text-white/60 text-sm">{aiMode && aiAnalyzed ? "Score IA" : "Progression manuelle"}</span>
@@ -240,7 +240,7 @@ export default function ChecklistPage() {
       {/* Checklist by category */}
       <div className="space-y-5 mb-8">
         {categories.map(cat => (
-          <div key={cat} className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+          <div key={cat} className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
             <h3 className={`font-semibold mb-4 flex items-center gap-2 ${CATEGORY_COLORS[cat]}`}>
               <CheckSquare size={16} />
               {cat}
@@ -337,7 +337,7 @@ export default function ChecklistPage() {
 
       {/* Genre Compliance Panel */}
       {genreResult && (
-        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-white font-semibold flex items-center gap-2">
               <BookOpen size={18} className="text-blue-400" />
@@ -437,3 +437,4 @@ export default function ChecklistPage() {
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useEffect } from "react";
 import { UserCircle, Sparkles, Loader2, Copy } from "lucide-react";
 import { getBooks, type Book } from "@/lib/books";
@@ -47,18 +47,18 @@ export default function AvatarPage() {
   };
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-1">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-600 to-purple-600 flex items-center justify-center">
             <UserCircle size={20} className="text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white">Reader Avatar Builder</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-white">Reader Avatar Builder</h1>
         </div>
         <p className="text-white/50">Crée le profil ultra-détaillé de ton lecteur idéal · Peurs · Désirs · Déclencheurs d'achat</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         <div className="space-y-4">
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5 space-y-4">
             <h2 className="text-white font-semibold">Ton livre</h2>
@@ -99,7 +99,7 @@ export default function AvatarPage() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                 <AvatarCard title="Sa situation" color="purple">
                   <p className="text-white/60 text-sm">{avatar.situation}</p>
                 </AvatarCard>
@@ -120,12 +120,12 @@ export default function AvatarPage() {
                 </AvatarCard>
               </div>
 
-              <div className="bg-gradient-to-r from-violet-500/10 to-purple-500/10 border border-violet-500/20 rounded-2xl p-5">
+              <div className="bg-gradient-to-r from-violet-500/10 to-purple-500/10 border border-violet-500/20 rounded-2xl p-4 md:p-5">
                 <p className="text-violet-300 text-xs font-medium mb-2">Message marketing idéal</p>
                 <p className="text-white font-medium text-sm">"{avatar.message_marketing}"</p>
               </div>
 
-              <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+              <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
                 <p className="text-white/50 text-xs font-medium mb-2">Parcours client</p>
                 <p className="text-white/60 text-sm">{avatar.parcours_client}</p>
               </div>
@@ -164,3 +164,4 @@ function AvatarCard({ title, color, children }: { title: string; color: string; 
     </div>
   );
 }
+

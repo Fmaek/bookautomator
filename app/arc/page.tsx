@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useEffect } from "react";
 import { Activity, Sparkles, Loader2 } from "lucide-react";
 import { getBooks, type Book } from "@/lib/books";
@@ -53,18 +53,18 @@ export default function ArcPage() {
   const maxIntensity = result ? Math.max(...result.arcs.map(a => a.intensity), 1) : 100;
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-1">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-600 to-orange-500 flex items-center justify-center">
             <Activity size={20} className="text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white">Emotional Arc Analyzer</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-white">Emotional Arc Analyzer</h1>
         </div>
         <p className="text-white/50">Visualise l'intensité émotionnelle de chaque chapitre · Détecte les creux et les pics</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         <div className="space-y-4">
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5 space-y-4">
             <h2 className="text-white font-semibold">Livre à analyser</h2>
@@ -106,7 +106,7 @@ export default function ArcPage() {
           {result ? (
             <>
               {/* Waveform chart */}
-              <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+              <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
                 <h3 className="text-white font-semibold text-sm mb-5">Courbe d'intensité émotionnelle</h3>
                 <div className="relative">
                   {/* Y-axis labels */}
@@ -153,7 +153,7 @@ export default function ArcPage() {
               )}
 
               {/* Chapter list */}
-              <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+              <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
                 <h3 className="text-white font-semibold text-sm mb-4">Détail par chapitre</h3>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
                   {result.arcs.map((arc, i) => {
@@ -194,3 +194,4 @@ export default function ArcPage() {
     </div>
   );
 }
+

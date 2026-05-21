@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useEffect } from "react";
 import {
   ExternalLink, CheckCircle, Circle, Copy, Check,
@@ -211,7 +211,7 @@ function PlatformCard({
           </div>
 
           {/* Payment + live info */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="bg-black/20 rounded-xl p-3">
               <p className="text-white/40 text-xs font-semibold mb-1 flex items-center gap-1"><Wallet size={11} /> Paiement</p>
               <p className="text-white/60 text-xs leading-relaxed">{p.payInfo}</p>
@@ -258,9 +258,9 @@ export default function PublishPage() {
   const ic = "w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 text-sm focus:outline-none focus:border-purple-500/50";
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-1">Publier & Gagner de l&apos;Argent</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Publier & Gagner de l&apos;Argent</h1>
         <p className="text-white/50">Assistant de publication guidé — copie-colle en 1 clic sur chaque plateforme</p>
       </div>
 
@@ -273,11 +273,11 @@ export default function PublishPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8">
         {/* Left: book config */}
         <div className="space-y-4">
           {/* Book selector */}
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
             <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
               <BookOpen size={15} className="text-purple-400" /> Livre à publier
             </h3>
@@ -331,7 +331,7 @@ export default function PublishPage() {
           </div>
 
           {/* Revenue simulator */}
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
             <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
               <TrendingUp size={15} className="text-emerald-400" /> Revenus estimés
             </h3>
@@ -366,3 +366,4 @@ export default function PublishPage() {
     </div>
   );
 }
+

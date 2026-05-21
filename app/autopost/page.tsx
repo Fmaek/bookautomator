@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useEffect, useCallback } from "react";
 import {
   Send, Camera, Share2, Clock, Trash2, Play, CheckCircle,
@@ -198,11 +198,11 @@ export default function AutoPostPage() {
   };
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-1">Post Automatique</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Post Automatique</h1>
           <p className="text-white/50">Publie tes promotions de livres sur Facebook & Instagram</p>
         </div>
         <div className="flex items-center gap-3">
@@ -254,7 +254,7 @@ export default function AutoPostPage() {
         <div className="grid grid-cols-5 gap-6">
           <div className="col-span-3 space-y-4">
             {/* Book selector */}
-            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
               <label className="text-white/60 text-xs mb-2 block">Livre concerné</label>
               <select value={selectedBook} onChange={e => setSelectedBook(e.target.value)}
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none">
@@ -285,7 +285,7 @@ export default function AutoPostPage() {
             </div>
 
             {/* Post text */}
-            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
               <div className="flex items-center justify-between mb-3">
                 <label className="text-white/60 text-xs">Texte du post</label>
                 <span className="text-white/25 text-xs">{postText.length} / 2000</span>
@@ -318,7 +318,7 @@ export default function AutoPostPage() {
           {/* Right panel */}
           <div className="col-span-2 space-y-4">
             {/* Platform selector */}
-            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
               <label className="text-white/60 text-xs mb-3 block">Plateformes</label>
               <div className="space-y-2">
                 {PLATFORMS.map(({ id, label, icon: Icon, color, bg }) => (
@@ -335,7 +335,7 @@ export default function AutoPostPage() {
             </div>
 
             {/* Cover toggle */}
-            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
               <label className="text-white/60 text-xs mb-3 block">Couverture</label>
               <button onClick={() => setIncludeCover(v => !v)}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition-all ${includeCover ? "bg-violet-500/20 border-violet-500/30 text-violet-300" : "bg-white/[0.02] border-white/[0.06] text-white/30"}`}>
@@ -349,7 +349,7 @@ export default function AutoPostPage() {
             </div>
 
             {/* Quick post */}
-            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
               <label className="text-white/60 text-xs mb-3 block">Post rapide</label>
               <button onClick={handlePostNow} disabled={postingNow || !connected}
                 className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-500/20 border border-emerald-500/30 hover:bg-emerald-500/30 text-emerald-300 rounded-xl text-sm font-medium transition-colors disabled:opacity-40">
@@ -478,7 +478,7 @@ export default function AutoPostPage() {
       {/* ── SETTINGS ────────────────────────────────────────────────────── */}
       {tab === "settings" && (
         <div className="max-w-xl space-y-6">
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 space-y-5">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6 space-y-4 md:space-y-5">
             <h3 className="text-white font-semibold">Connexion au serveur</h3>
 
             <div>
@@ -503,7 +503,7 @@ export default function AutoPostPage() {
             </button>
           </div>
 
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
             <h3 className="text-white font-semibold mb-4">Connexion aux réseaux</h3>
             <p className="text-white/50 text-sm mb-4">La connexion se fait via le serveur tiktok_webapp. Clique sur les boutons ci-dessous pour ouvrir un navigateur et te connecter.</p>
             <div className="flex gap-3">
@@ -518,7 +518,7 @@ export default function AutoPostPage() {
             </div>
           </div>
 
-          <div className="bg-amber-500/[0.07] border border-amber-500/20 rounded-2xl p-5">
+          <div className="bg-amber-500/[0.07] border border-amber-500/20 rounded-2xl p-4 md:p-5">
             <p className="text-amber-300 text-sm font-semibold mb-2">Comment ça marche</p>
             <ol className="text-white/50 text-sm space-y-2">
               <li>1. Lance <code className="bg-white/10 px-1 rounded text-white/80">python main.py</code> dans ton dossier <code className="bg-white/10 px-1 rounded text-white/80">tiktok_webapp</code></li>
@@ -532,3 +532,4 @@ export default function AutoPostPage() {
     </div>
   );
 }
+

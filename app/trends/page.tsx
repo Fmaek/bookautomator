@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState } from "react";
 import { TrendingUp, RefreshCw, Flame, BookOpen, ArrowRight, Search, Sparkles } from "lucide-react";
 
@@ -49,7 +49,7 @@ export default function TrendsPage() {
   );
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
         <div className="flex items-center justify-between">
           <div>
@@ -57,7 +57,7 @@ export default function TrendsPage() {
               <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
               <span className="text-red-400 text-sm font-medium">LIVE — Analyse en temps réel</span>
             </div>
-            <h1 className="text-3xl font-bold text-white mb-1">Tendances Meta</h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Tendances Meta</h1>
             <p className="text-white/50">Sujets viraux Facebook & Instagram → idées de livres qui se vendent</p>
           </div>
           <button
@@ -143,3 +143,4 @@ export default function TrendsPage() {
     </div>
   );
 }
+

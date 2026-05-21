@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -6,7 +7,7 @@ import {
   Megaphone, Radio, Calendar, DollarSign, Package, Globe, Ghost,
   Fingerprint, Search, Headphones, Languages, GraduationCap, UserCircle,
   Workflow, Palette, BarChart3, Drama, Network, TrendingUp,
-  Activity, BookMarked
+  Activity, BookMarked, Menu, X
 } from "lucide-react";
 
 const SECTIONS = [
@@ -82,12 +83,13 @@ const SECTIONS = [
 
 export default function Sidebar() {
   const path = usePathname();
+  const [open, setOpen] = useState(false);
 
-  return (
-    <aside className="w-64 h-screen flex flex-col border-r border-white/5 bg-white/[0.02] backdrop-blur-xl shrink-0">
-      <div className="p-5 border-b border-white/5">
+  const NavContent = () => (
+    <>
+      <div className="p-5 border-b border-white/5 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shrink-0">
             <Zap size={18} className="text-white" />
           </div>
           <div>
@@ -95,6 +97,9 @@ export default function Sidebar() {
             <p className="text-xs text-white/40">IA · Écriture · Publication</p>
           </div>
         </div>
+        <button onClick={() => setOpen(false)} className="md:hidden p-1.5 text-white/40 hover:text-white">
+          <X size={18} />
+        </button>
       </div>
 
       <nav className="flex-1 p-3 overflow-y-auto space-y-4">
@@ -105,13 +110,13 @@ export default function Sidebar() {
               {section.items.map(({ href, icon: Icon, label }) => {
                 const active = path === href;
                 return (
-                  <Link key={href} href={href}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-150 ${
+                  <Link key={href} href={href} onClick={() => setOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 ${
                       active
                         ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
                         : "text-white/45 hover:text-white hover:bg-white/5 border border-transparent"
                     }`}>
-                    <Icon size={14} />
+                    <Icon size={14} className="shrink-0" />
                     <span className="truncate">{label}</span>
                     {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />}
                   </Link>
@@ -128,6 +133,38 @@ export default function Sidebar() {
           <p className="text-xs font-semibold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Groq AI + Pollinations.ai</p>
         </div>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile top bar */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center gap-3 px-4 py-3 bg-[#0a0a0a]/95 backdrop-blur-xl border-b border-white/5">
+        <button onClick={() => setOpen(true)} className="p-2 text-white/60 hover:text-white transition-colors">
+          <Menu size={20} />
+        </button>
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+            <Zap size={13} className="text-white" />
+          </div>
+          <span className="font-bold text-white text-sm">BookAutomator</span>
+        </div>
+      </div>
+
+      {/* Mobile overlay */}
+      {open && (
+        <div className="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={() => setOpen(false)} />
+      )}
+
+      {/* Mobile drawer */}
+      <aside className={`md:hidden fixed inset-y-0 left-0 z-50 w-72 flex flex-col border-r border-white/5 bg-[#0d0d14] transition-transform duration-300 ease-in-out ${open ? "translate-x-0" : "-translate-x-full"}`}>
+        <NavContent />
+      </aside>
+
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex w-64 h-screen flex-col border-r border-white/5 bg-white/[0.02] backdrop-blur-xl shrink-0">
+        <NavContent />
+      </aside>
+    </>
   );
 }

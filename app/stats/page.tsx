@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useEffect } from "react";
 import {
   TrendingUp, BookOpen, FileText, Target, Plus, Trash2,
@@ -96,21 +96,21 @@ export default function StatsPage() {
   const ic = "bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-white/30 text-sm focus:outline-none";
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-1">Statistiques & Objectifs</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Statistiques & Objectifs</h1>
         <p className="text-white/50">Suis tes ventes, tes revenus et tes objectifs d&apos;écriture</p>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
         {[
           { label: "Livres écrits", value: books.length, sub: `${publishedBooks} publiés`, icon: BookOpen, color: "text-purple-400", bg: "bg-purple-500/10" },
           { label: "Mots écrits", value: totalWords.toLocaleString("fr"), sub: `${Math.round(totalWords / 250)} pages`, icon: FileText, color: "text-blue-400", bg: "bg-blue-500/10" },
           { label: "Ventes totales", value: totalUnits, sub: "toutes plateformes", icon: TrendingUp, color: "text-emerald-400", bg: "bg-emerald-500/10" },
           { label: "Revenus totaux", value: `${totalRevenue.toFixed(2)}€`, sub: "net estimé", icon: Wallet, color: "text-amber-400", bg: "bg-amber-500/10" },
         ].map(({ label, value, sub, icon: Icon, color, bg }) => (
-          <div key={label} className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
+          <div key={label} className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-4 md:p-5">
             <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center mb-3`}>
               <Icon size={18} className={color} />
             </div>
@@ -121,11 +121,11 @@ export default function StatsPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         {/* Left column */}
         <div className="space-y-5">
           {/* Goals */}
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
             <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
               <Target size={15} className="text-pink-400" /> Objectifs du mois
             </h3>
@@ -159,7 +159,7 @@ export default function StatsPage() {
           </div>
 
           {/* By platform */}
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
             <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
               <BarChart2 size={15} className="text-blue-400" /> Par plateforme
             </h3>
@@ -181,7 +181,7 @@ export default function StatsPage() {
           </div>
 
           {/* Books list */}
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
             <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
               <Award size={15} className="text-amber-400" /> Tes livres
             </h3>
@@ -202,7 +202,7 @@ export default function StatsPage() {
         {/* Right: chart + sales log */}
         <div className="col-span-2 space-y-5">
           {/* Revenue chart */}
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
             <h3 className="text-white font-semibold mb-5 flex items-center gap-2">
               <TrendingUp size={15} className="text-emerald-400" /> Revenus par mois
             </h3>
@@ -222,7 +222,7 @@ export default function StatsPage() {
           </div>
 
           {/* Sales log */}
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-white font-semibold flex items-center gap-2">
                 <Calendar size={15} className="text-purple-400" /> Journal des ventes
@@ -235,7 +235,7 @@ export default function StatsPage() {
 
             {showAddSale && (
               <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 mb-4">
-                <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                   <div>
                     <label className="text-white/40 text-xs mb-1 block">Plateforme</label>
                     <select value={newSale.platform} onChange={e => setNewSale(p => ({ ...p, platform: e.target.value }))}
@@ -313,3 +313,4 @@ export default function StatsPage() {
     </div>
   );
 }
+

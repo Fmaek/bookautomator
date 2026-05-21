@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState } from "react";
 import { Telescope, TrendingUp, Users, Shield, DollarSign, Search, Sparkles, Loader2, Copy } from "lucide-react";
 
@@ -147,13 +147,13 @@ export default function ResearchPage() {
   const currentTab = TABS.find(t => t.id === tab)!;
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-1">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-600 to-blue-600 flex items-center justify-center">
             <Search size={20} className="text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white">Research Hub</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-white">Research Hub</h1>
         </div>
         <p className="text-white/50">Intelligence marché · Analyse concurrentielle · Sentiment · Prix optimal · Anti-plagiat</p>
       </div>
@@ -169,8 +169,8 @@ export default function ResearchPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-8">
-        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 space-y-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6 space-y-4 md:space-y-5">
           <h2 className={`font-semibold flex items-center gap-2 ${currentTab.color}`}>
             <currentTab.icon size={16} /> {currentTab.label}
           </h2>
@@ -182,7 +182,7 @@ export default function ResearchPage() {
           </button>
         </div>
 
-        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
           {result[tab] ? (
             <>
               <div className="flex items-center justify-between mb-4">
@@ -207,3 +207,4 @@ export default function ResearchPage() {
     </div>
   );
 }
+

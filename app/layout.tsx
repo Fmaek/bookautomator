@@ -12,7 +12,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="fr" className="h-full">
       <body className="flex h-screen overflow-hidden bg-[#0a0a0a]">
         <Sidebar />
-        <main className="flex-1 overflow-y-auto scrollbar-hide">
+        {/* pt-14 on mobile to clear the fixed top bar */}
+        <main className="flex-1 overflow-y-auto scrollbar-hide pt-14 md:pt-0">
           {children}
         </main>
       </body>

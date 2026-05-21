@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState } from "react";
 import { Calendar, Loader2, Copy, Download, Sparkles, ChevronRight, CheckCircle } from "lucide-react";
 import { getBooks } from "@/lib/books";
@@ -107,14 +107,14 @@ export default function CalendarPage() {
   const ic = "w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 text-sm focus:outline-none focus:border-purple-500/50";
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-1">Calendrier de Promotion</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Calendrier de Promotion</h1>
         <p className="text-white/50">30 jours de contenu IA — du pré-lancement au long terme</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-8 mb-8">
-        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 mb-8">
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6 space-y-4">
           <h2 className="text-white font-semibold">Configuration</h2>
 
           <div>
@@ -151,9 +151,9 @@ export default function CalendarPage() {
           </button>
         </div>
 
-        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
           <h2 className="text-white font-semibold mb-4">Types de contenu</h2>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {CONTENT_TYPES.map(ct => (
               <div key={ct.label} className="flex items-center gap-2 p-3 bg-white/[0.03] rounded-xl border border-white/[0.06]">
                 <span className="text-xl">{ct.emoji}</span>
@@ -168,7 +168,7 @@ export default function CalendarPage() {
       </div>
 
       {(parsedDays.length > 0 || rawCalendar) && (
-        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
           <div className="flex items-center justify-between mb-5">
             <div>
               <h2 className="text-white font-semibold">Calendrier — {selectedBookData?.title || "Mon livre"}</h2>
@@ -216,3 +216,4 @@ export default function CalendarPage() {
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useEffect } from "react";
 import { BarChart3, Sparkles, Loader2, DollarSign, TrendingUp, Copy } from "lucide-react";
 import { getBooks, type Book } from "@/lib/books";
@@ -64,13 +64,13 @@ export default function ForecastPage() {
   const MONTHS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Jun", "Jul", "Aoû", "Sep", "Oct", "Nov", "Déc"];
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-4 md:p-8 min-h-screen">
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-1">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-600 flex items-center justify-center">
             <BarChart3 size={20} className="text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white">Prévisions & Monétisation</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-white">Prévisions & Monétisation</h1>
         </div>
         <p className="text-white/50">Royalties forecast · Prix optimal · Copies AMS prêtes</p>
       </div>
@@ -85,7 +85,7 @@ export default function ForecastPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         <div className="space-y-4">
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5 space-y-4">
             <div>
@@ -145,7 +145,7 @@ export default function ForecastPage() {
               </div>
 
               {scenarioData && (
-                <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+                <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-5">
                   <div className="flex items-center justify-between mb-4">
                     <p className="text-white/60 text-sm">{scenarioData.description}</p>
                     <div className="text-right">
@@ -190,7 +190,7 @@ export default function ForecastPage() {
               )}
             </div>
           ) : textResult ? (
-            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6">
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 md:p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-white font-semibold text-sm">Résultats</h3>
                 <button onClick={() => navigator.clipboard.writeText(textResult)}
@@ -213,3 +213,4 @@ export default function ForecastPage() {
     </div>
   );
 }
+
