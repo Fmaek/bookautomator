@@ -757,6 +757,92 @@ Format tableau, 30 lignes.` },
       return NextResponse.json({ calendar: completion.choices[0].message.content || "" });
     }
 
+    // ── AUTO CHECKLIST VERIFICATION ──────────────────────────────────────────
+    if (action === "checklist_auto") {
+      const { bookTitle, category, chaptersContent, items } = body;
+      const text = (chaptersContent as string).substring(0, 8000);
+      const itemList = (items as { id: string; label: string; desc: string }[])
+        .map(i => `${i.id}: ${i.label} — ${i.desc}`).join("\n");
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es un éditeur professionnel qui vérifie la qualité des livres numériques. Tu analyses le contenu et renvoies UNIQUEMENT un JSON valide, sans markdown." },
+          { role: "user", content: `Analyse ce livre et vérifie chaque point de la checklist.
+
+LIVRE: "${bookTitle}" (${category})
+CONTENU (extrait):
+${text}
+
+POINTS À VÉRIFIER:
+${itemList}
+
+Pour chaque point, dis si c'est PASS ou FAIL avec une note courte (max 80 chars) expliquant POURQUOI.
+Si FAIL, dis comment corriger en 1 phrase courte.
+
+Réponds UNIQUEMENT avec ce JSON:
+{
+  "results": [
+    { "id": "c1", "pass": true, "note": "raison courte" },
+    { "id": "c2", "pass": false, "note": "problème détecté", "fix": "comment corriger" }
+  ]
+}` },
+        ],
+        temperature: 0.3, max_tokens: 2000,
+      });
+      const raw = completion.choices[0].message.content?.trim() || "{}";
+      const clean = raw.replace(/```json\n?|\n?```/g, "").trim();
+      return NextResponse.json(JSON.parse(clean));
+    }
+
+    // ── GENRE COMPLIANCE CHECK ────────────────────────────────────────────────
+    if (action === "genre_check") {
+      const { bookTitle, category, chaptersContent } = body;
+      const text = (chaptersContent as string).substring(0, 8000);
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es un éditeur expert en conformité de livres par genre. Tu analyses si un livre contient tous les éléments attendus de son genre. Tu réponds UNIQUEMENT en JSON valide sans markdown." },
+          { role: "user", content: `Analyse si ce livre correspond bien à son genre et contient tous les éléments attendus.
+
+LIVRE: "${bookTitle}"
+GENRE/CATÉGORIE: ${category}
+CONTENU (extrait):
+${text}
+
+Identifie les éléments OBLIGATOIRES et RECOMMANDÉS pour ce genre.
+Pour chaque élément, dis s'il est PRÉSENT ou ABSENT dans le livre.
+Si absent, dis COMMENT l'ajouter concrètement.
+
+Réponds UNIQUEMENT avec ce JSON:
+{
+  "genre": "${category}",
+  "score": 75,
+  "verdict": "Bon livre mais manque d'exercices pratiques",
+  "elements": [
+    {
+      "name": "Nom de l'élément",
+      "importance": "obligatoire",
+      "present": true,
+      "note": "Bien présent dans les chapitres 2 et 4",
+      "fix": null
+    },
+    {
+      "name": "Exercices pratiques",
+      "importance": "obligatoire",
+      "present": false,
+      "note": "Aucun exercice ou activité pour le lecteur",
+      "fix": "Ajoute 1-2 exercices à la fin de chaque chapitre: questions de réflexion, mise en action concrète, journal de bord"
+    }
+  ]
+}` },
+        ],
+        temperature: 0.3, max_tokens: 3000,
+      });
+      const raw = completion.choices[0].message.content?.trim() || "{}";
+      const clean = raw.replace(/```json\n?|\n?```/g, "").trim();
+      return NextResponse.json(JSON.parse(clean));
+    }
+
     // ── LANDING PAGE COPY ─────────────────────────────────────────────────────
     if (action === "landing") {
       const { bookTitle, authorName, description, category, price } = body;
@@ -811,6 +897,428 @@ POUR QUI: [profil lecteur idéal]` },
         temperature: 0.8, max_tokens: 1500,
       });
       return NextResponse.json({ description: completion.choices[0].message.content || "" });
+    }
+
+    // ── GHOST BOOK (single chapter, called per chapter) ───────────────────────
+    if (action === "ghost_book") {
+      const { title, category, description, style, chapterTitle, chapterIndex, totalChapters } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: SYSTEM_AUTHOR },
+          { role: "user", content: `Écris le chapitre ${chapterIndex + 1}/${totalChapters} intitulé "${chapterTitle}" du livre "${title}" (${category || "Non-fiction"}).
+Description du livre: ${description || ""}
+Style: ${style || "Motivant et direct"}
+Objectif: 400-600 mots. Prose continue, pas d'astérisques ni de tirets.` },
+        ],
+        temperature: 0.85, max_tokens: 1200,
+      });
+      return NextResponse.json({ content: completion.choices[0].message.content || "" });
+    }
+
+    // ── TONE CLONE ────────────────────────────────────────────────────────────
+    if (action === "tone_clone") {
+      const { sampleText, bookTitle, chapterTitle, instruction } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en analyse stylistique et mimétisme littéraire. Tu extrais l'ADN d'un style et l'appliques à de nouveaux textes." },
+          { role: "user", content: `Analyse ce texte et extrais son style unique:
+
+TEXTE D'EXEMPLE:
+${(sampleText as string).substring(0, 2000)}
+
+Puis écris un nouveau contenu sur "${chapterTitle || instruction || "ce sujet"}" pour le livre "${bookTitle || "ce livre"}" en imitant EXACTEMENT ce style.
+
+FORMAT DE RÉPONSE:
+STYLE DÉTECTÉ:
+[5 caractéristiques du style]
+
+TEXTE GÉNÉRÉ:
+[300-400 mots dans ce style]` },
+        ],
+        temperature: 0.8, max_tokens: 1500,
+      });
+      return NextResponse.json({ result: completion.choices[0].message.content || "" });
+    }
+
+    // ── EMOTIONAL ARC ANALYZER ────────────────────────────────────────────────
+    if (action === "emotional_arc") {
+      const { bookTitle, chapters } = body;
+      const chapterList = (chapters as { title: string; content: string }[])
+        .map((c, i) => `CH${i + 1}: "${c.title}" — ${c.content.substring(0, 200)}`).join("\n");
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es analyste littéraire expert en psychologie du lecteur. Réponds uniquement en JSON valide." },
+          { role: "user", content: `Analyse l'arc émotionnel du livre "${bookTitle}".
+Chapitres:
+${chapterList}
+
+Pour chaque chapitre: intensity (0-100), emotion dominante, note (1 phrase).
+JSON:
+{"arcs":[{"chapter":1,"title":"titre","intensity":45,"emotion":"espoir","note":"..."}],"globalNote":"analyse globale 2 phrases"}` },
+        ],
+        temperature: 0.4, max_tokens: 2000,
+      });
+      const raw = completion.choices[0].message.content?.trim() || "{}";
+      return NextResponse.json(JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()));
+    }
+
+    // ── PRICE OPTIMIZER ───────────────────────────────────────────────────────
+    if (action === "price_optimizer") {
+      const { bookTitle, category, pages, targetMarket } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en stratégie de pricing pour l'édition numérique indépendante." },
+          { role: "user", content: `Prix optimal pour: "${bookTitle}" | Catégorie: ${category} | Pages: ${pages || "?"} | Marché: ${targetMarket || "francophone"}
+
+1. PRIX RECOMMANDÉ + PRIX PSYCHOLOGIQUE optimal
+2. ANALYSE CONCURRENCE dans cette catégorie
+3. STRATÉGIE DE LANCEMENT (prix intro vs définitif)
+4. PRIX PAR PLATEFORME (KDP, Kobo, D2D)
+5. IMPACT ROYALTIES à chaque palier de prix
+6. SCORE CONFIANCE /10` },
+        ],
+        temperature: 0.5, max_tokens: 1200,
+      });
+      return NextResponse.json({ result: completion.choices[0].message.content || "" });
+    }
+
+    // ── AMS ADS COPY ──────────────────────────────────────────────────────────
+    if (action === "ams_ads") {
+      const { bookTitle, category, targetKeywords, authorName } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en publicité Amazon Marketing Services (AMS) pour livres numériques." },
+          { role: "user", content: `Copies AMS pour "${bookTitle}" (${category}) de ${authorName || "l'auteur"}.
+Mots-clés cibles: ${targetKeywords || ""}
+
+1. TITRE PUB (max 50 chars): 3 variantes
+2. DESCRIPTION (max 150 chars): 3 variantes
+3. HEADLINE SPONSORISÉ (max 50 chars): 3 variantes
+4. 20 MOTS-CLÉS EXACTS à cibler
+5. 10 MOTS-CLÉS NÉGATIFS à exclure
+6. BUDGET & CPC recommandé
+7. A/B TEST: quelle variante tester en premier` },
+        ],
+        temperature: 0.7, max_tokens: 1500,
+      });
+      return NextResponse.json({ result: completion.choices[0].message.content || "" });
+    }
+
+    // ── COMPETITOR X-RAY ──────────────────────────────────────────────────────
+    if (action === "competitor_xray") {
+      const { niche, category, titles } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en analyse concurrentielle pour l'édition numérique indépendante." },
+          { role: "user", content: `Analyse concurrentielle: niche "${niche}" (${category || "Non-fiction"}).
+Concurrents mentionnés: ${titles || "non spécifiés"}
+
+1. NIVEAU DE SATURATION (Faible/Moyen/Fort)
+2. GAPS DU MARCHÉ: ce que les concurrents ne couvrent pas
+3. 5 ANGLES DIFFÉRENCIANTS
+4. PATTERNS DE TITRES qui fonctionnent
+5. FAIBLESSES COMMUNES (d'après les avis types)
+6. STRATÉGIE DE POSITIONNEMENT recommandée
+7. 3 SOUS-NICHES moins compétitives
+8. SCORE D'OPPORTUNITÉ /10` },
+        ],
+        temperature: 0.65, max_tokens: 1500,
+      });
+      return NextResponse.json({ result: completion.choices[0].message.content || "" });
+    }
+
+    // ── READER SENTIMENT MAP ──────────────────────────────────────────────────
+    if (action === "sentiment_map") {
+      const { reviews, bookTitle } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en analyse de sentiment lecteur. Réponds en JSON valide." },
+          { role: "user", content: `Analyse ces avis pour "${bookTitle || "ce livre"}":
+${(reviews as string).substring(0, 5000)}
+
+JSON:
+{"positifs":["..."],"negatifs":["..."],"attentes":["..."],"mots_cles":["..."],"profil":"...","score":7.5,"recommandation":"..."}` },
+        ],
+        temperature: 0.4, max_tokens: 1200,
+      });
+      const raw = completion.choices[0].message.content?.trim() || "{}";
+      return NextResponse.json(JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()));
+    }
+
+    // ── NICHE TREND RADAR ─────────────────────────────────────────────────────
+    if (action === "trend_radar") {
+      const { category, language } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en tendances éditoriales numériques 2024-2025." },
+          { role: "user", content: `Tendances niches éditoriales pour ${category || "tous genres"} en ${language || "français"}.
+
+1. TOP 5 NICHES EN EXPLOSION (score croissance, pourquoi, durée)
+2. NICHES ÉMERGENTES (surveiller dans 6-12 mois)
+3. NICHES SATURÉES (à éviter)
+4. ANGLE VIRAL DU MOMENT
+5. 10 MOTS-CLÉS TENDANCE
+6. PLATEFORMES OÙ CES NICHES PERCENT
+7. FENÊTRE D'OPPORTUNITÉ estimée` },
+        ],
+        temperature: 0.7, max_tokens: 1500,
+      });
+      return NextResponse.json({ result: completion.choices[0].message.content || "" });
+    }
+
+    // ── PLAGIARISM CHECK ──────────────────────────────────────────────────────
+    if (action === "plagiarism_check") {
+      const { bookTitle, content } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en originalité du contenu et détection de similarités." },
+          { role: "user", content: `Originalité du livre "${bookTitle}":
+${(content as string).substring(0, 5000)}
+
+1. SCORE D'ORIGINALITÉ /100
+2. PHRASES GÉNÉRIQUES (trop communes)
+3. CONCEPTS TROP SIMILAIRES à des œuvres connues
+4. ZONES À RISQUE
+5. RECOMMANDATIONS pour renforcer l'originalité
+6. POINTS FORTS UNIQUES
+7. VERDICT: Safe / Attention / Risque élevé` },
+        ],
+        temperature: 0.3, max_tokens: 1200,
+      });
+      return NextResponse.json({ result: completion.choices[0].message.content || "" });
+    }
+
+    // ── READING AGE CALIBRATOR ────────────────────────────────────────────────
+    if (action === "reading_age") {
+      const { content, targetLevel, bookTitle } = body;
+      const levelMap: Record<string, string> = {
+        "enfant": "niveau CE2-CM2 (8-11 ans), phrases courtes, vocabulaire simple",
+        "ado": "niveau collège-lycée (12-17 ans), accessible et engageant",
+        "adulte_general": "grand public adulte, fluide et accessible",
+        "expert": "professionnel/expert, vocabulaire technique assumé",
+      };
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: SYSTEM_AUTHOR },
+          { role: "user", content: `Réécris ce contenu de "${bookTitle}" pour un ${levelMap[targetLevel as string] || "adulte général"}.
+Garde les idées, adapte le style et le vocabulaire.
+CONTENU:
+${(content as string).substring(0, 3000)}
+Retourne UNIQUEMENT le texte adapté.` },
+        ],
+        temperature: 0.7, max_tokens: 2000,
+      });
+      return NextResponse.json({ result: completion.choices[0].message.content || "" });
+    }
+
+    // ── AUTO-TRANSLATOR ───────────────────────────────────────────────────────
+    if (action === "translate_book") {
+      const { content, targetLanguage, bookTitle, chapterTitle } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: `Tu es traducteur littéraire professionnel. Tu traduis en ${targetLanguage} de façon naturelle et idiomatique.` },
+          { role: "user", content: `Traduis "${chapterTitle || ""}" du livre "${bookTitle || ""}" en ${targetLanguage}.
+Traduction naturelle, adapte les références culturelles.
+ORIGINAL:
+${(content as string).substring(0, 4000)}
+Retourne UNIQUEMENT la traduction.` },
+        ],
+        temperature: 0.6, max_tokens: 3000,
+      });
+      return NextResponse.json({ translation: completion.choices[0].message.content || "" });
+    }
+
+    // ── BOOK-TO-COURSE ────────────────────────────────────────────────────────
+    if (action === "book_to_course") {
+      const { bookTitle, category, chapters } = body;
+      const chapterList = (chapters as { title: string; content: string }[])
+        .map((c, i) => `Module ${i + 1}: "${c.title}" — ${c.content.substring(0, 200)}`).join("\n");
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en ingénierie pédagogique et création de formations en ligne." },
+          { role: "user", content: `Transforme "${bookTitle}" (${category}) en formation en ligne structurée.
+Chapitres: ${chapterList}
+
+1. TITRE DE LA FORMATION + PROMESSE DE TRANSFORMATION
+2. PRÉREQUIS
+3. MODULES (basés sur les chapitres): titre, objectif, 3-4 leçons, exercice pratique, quiz 3 questions
+4. BONUS suggérés (workbook, templates, communauté)
+5. PRIX RECOMMANDÉ
+6. PLATEFORME RECOMMANDÉE (Teachable, Kajabi, Gumroad...)` },
+        ],
+        temperature: 0.75, max_tokens: 3000,
+      });
+      return NextResponse.json({ course: completion.choices[0].message.content || "" });
+    }
+
+    // ── READER AVATAR BUILDER ─────────────────────────────────────────────────
+    if (action === "reader_avatar") {
+      const { bookTitle, category, targetDescription } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en marketing et création de personas acheteurs. Réponds en JSON valide." },
+          { role: "user", content: `Avatar lecteur idéal pour "${bookTitle}" (${category}).
+Cible: ${targetDescription || "non spécifiée"}
+
+JSON:
+{"prenom":"Marie","age":34,"profession":"...","situation":"...","probleme_principal":"...","desirs":["..."],"peurs":["..."],"objections_achat":["..."],"triggers_dachat":["..."],"plateformes":["Instagram"],"message_marketing":"la phrase qui le fait acheter","parcours_client":"..."}` },
+        ],
+        temperature: 0.8, max_tokens: 1500,
+      });
+      const raw = completion.choices[0].message.content?.trim() || "{}";
+      return NextResponse.json(JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()));
+    }
+
+    // ── VIRAL HOOKS LAB ───────────────────────────────────────────────────────
+    if (action === "viral_hooks") {
+      const { bookTitle, category, promise } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en copywriting viral et psychologie de l'attention." },
+          { role: "user", content: `20 accroches virales pour "${bookTitle}" (${category}).
+Promesse: ${promise || ""}
+
+5 accroches de chaque type:
+TYPE 1 — CURIOSITÉ (gap d'information)
+TYPE 2 — CHOC / CONTRE-INTUITIF
+TYPE 3 — BÉNÉFICE DIRECT
+TYPE 4 — SOCIAL PROOF
+TYPE 5 — PEUR / URGENCE
+
+Format: [accroche] | [format idéal: Titre/Post/Reel/Thread/Email]` },
+        ],
+        temperature: 0.9, max_tokens: 2000,
+      });
+      return NextResponse.json({ hooks: completion.choices[0].message.content || "" });
+    }
+
+    // ── EVERGREEN FUNNEL BUILDER ──────────────────────────────────────────────
+    if (action === "funnel_builder") {
+      const { bookTitle, authorName, price, leadMagnetIdea } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en funnels de vente evergreen pour auteurs indépendants." },
+          { role: "user", content: `Funnel evergreen pour "${bookTitle}" de ${authorName || "l'auteur"} (${price || "9,99€"}).
+Lead magnet idée: ${leadMagnetIdea || "à définir"}
+
+1. LEAD MAGNET: titre + description + format
+2. PAGE DE CAPTURE: H1 + sous-titre + 3 bullets + CTA
+3. SÉQUENCE 7 EMAILS (J0 à J6): OBJET + PRÉHEADER + RÉSUMÉ 80 mots chacun
+   J0: livraison lead magnet | J1: histoire | J2: valeur | J3: preuve | J4: valeur 2 | J5: présentation livre | J6: offre + CTA
+4. 3 EMAILS POST-ACHAT (nurturing)
+5. EMAIL RÉACTIVATION 6 semaines après` },
+        ],
+        temperature: 0.8, max_tokens: 4000,
+      });
+      return NextResponse.json({ funnel: completion.choices[0].message.content || "" });
+    }
+
+    // ── IP EXPANSION PLANNER ──────────────────────────────────────────────────
+    if (action === "ip_expansion") {
+      const { bookTitle, category, authorName } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en développement de propriété intellectuelle et stratégie multi-format pour auteurs." },
+          { role: "user", content: `Plan d'expansion IP pour "${bookTitle}" (${category}) de ${authorName || "l'auteur"}.
+
+PHASE 1 (0-3 mois): Workbook, threads, lead magnet, quiz
+PHASE 2 (3-6 mois): Formation en ligne, challenge 30 jours, communauté payante, webinaire
+PHASE 3 (6-12 mois): Livre papier, planner physique, deck de cartes, coaching premium
+PHASE 4 (12+ mois): Podcast, licences, conférences, partenariats auteurs
+
+Pour chaque produit: revenus estimés, effort (1-5), priorité (Haute/Moyenne/Basse)` },
+        ],
+        temperature: 0.75, max_tokens: 3000,
+      });
+      return NextResponse.json({ expansion: completion.choices[0].message.content || "" });
+    }
+
+    // ── PLOT TWIST ENGINE ─────────────────────────────────────────────────────
+    if (action === "plot_twist") {
+      const { bookTitle, category, chapterTitle, content, twistType } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: SYSTEM_AUTHOR },
+          { role: "user", content: `Dans "${bookTitle}" (${category}), chapitre "${chapterTitle}":
+Type de tournant: ${twistType || "révélation contre-intuitive"}
+Contexte: ${(content || "").substring(0, 800)}
+
+Propose 3 tournants:
+1. [MODÉRÉ]: description + 3 phrases de transition + impact
+2. [FORT]: description + 3 phrases de transition + impact
+3. [RADICAL]: description + 3 phrases de transition + impact` },
+        ],
+        temperature: 0.92, max_tokens: 1500,
+      });
+      return NextResponse.json({ twists: completion.choices[0].message.content || "" });
+    }
+
+    // ── AUTHOR PERSONA CREATOR ────────────────────────────────────────────────
+    if (action === "persona_create") {
+      const { realName, niche, style, values } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu crées des personas d'auteur fictifs authentiques pour l'édition indépendante." },
+          { role: "user", content: `Persona d'auteur pour niche: "${niche}" | Style: ${style || "expert accessible"} | Valeurs: ${values || "authenticité, impact"} | Inspiration: ${realName || "non fourni"}
+
+1. NOM DE PLUME mémorable
+2. BIO COURTE (50 mots, Amazon/Kobo)
+3. BIO LONGUE (150 mots, page de vente)
+4. HISTOIRE D'ORIGINE (100 mots)
+5. 3 ÉLÉMENTS SIGNATURE DU STYLE
+6. DESCRIPTION PHOTO (pour génération IA)
+7. PROFILS SOCIAUX: Instagram (150 chars) + LinkedIn + TikTok
+8. 5 ACTIONS pour rendre ce persona crédible
+9. LIGNE ÉDITORIALE: 3 thèmes principaux` },
+        ],
+        temperature: 0.85, max_tokens: 2000,
+      });
+      return NextResponse.json({ persona: completion.choices[0].message.content || "" });
+    }
+
+    // ── ROYALTY FORECAST ──────────────────────────────────────────────────────
+    if (action === "royalty_forecast") {
+      const { bookTitle, price, currentSales, category, platforms } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en prévisions financières pour auteurs indépendants. Réponds en JSON valide." },
+          { role: "user", content: `Prévisions royalties pour "${bookTitle}" | Prix: ${price}€ | Ventes actuelles/mois: ${currentSales || 0} | Catégorie: ${category} | Plateformes: ${platforms || "KDP"}
+
+Génère des scénarios sur 12 mois:
+JSON:
+{
+  "scenarios": {
+    "pessimiste": {"mensuel": [10,12,...], "annuel_total": 1200, "description": "..."},
+    "realiste": {"mensuel": [20,25,...], "annuel_total": 3000, "description": "..."},
+    "optimiste": {"mensuel": [50,70,...], "annuel_total": 8000, "description": "..."}
+  },
+  "breakEven": "combien de ventes pour couvrir les coûts",
+  "conseils": ["conseil 1", "conseil 2", "conseil 3"]
+}` },
+        ],
+        temperature: 0.4, max_tokens: 2000,
+      });
+      const raw = completion.choices[0].message.content?.trim() || "{}";
+      return NextResponse.json(JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()));
     }
 
     return NextResponse.json({ error: "Action inconnue" }, { status: 400 });
