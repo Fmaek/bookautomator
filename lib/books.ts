@@ -9,6 +9,8 @@ export interface Book {
   checklistPct: number;
   platforms: string[];
   chapters: { title: string; content: string }[];
+  tags?: string[];
+  authorName?: string;
   createdAt: string;
   updatedAt: string;
 }

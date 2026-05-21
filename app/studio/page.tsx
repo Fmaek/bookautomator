@@ -4,7 +4,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import {
   BookOpen, Zap, Edit3, Layers, Play, Copy, FileText,
   ChevronRight, Loader2, CheckCircle, Plus, Trash2, Save,
-  ArrowLeft, Sparkles, FileDown, AlignLeft, RefreshCw
+  ArrowLeft, Sparkles, FileDown, AlignLeft, RefreshCw, Mic, X
 } from "lucide-react";
 import { saveBook, newBook, type Book } from "@/lib/books";
 
@@ -27,6 +27,9 @@ const CATEGORIES = [
   "Poésie / Recueil",
   "Développement enfants",
   "Finance & Investissement",
+  "Livre enfant (3-8 ans)",
+  "Livre de coloriage enfant",
+  "Livre d'énigmes / Puzzles",
 ];
 
 interface Chapter { title: string; content: string; status: "pending" | "writing" | "done" }
@@ -106,9 +109,15 @@ function StudioContent() {
   const [bookDescription, setBookDescription] = useState("");
   const [generatingDesc, setGeneratingDesc] = useState(false);
   const [showDescription, setShowDescription] = useState(false);
+  const [podcastIdx, setPodcastIdx] = useState<number | null>(null);
+  const [podcastContent, setPodcastContent] = useState("");
+  const [generatingPodcast, setGeneratingPodcast] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isPoem = category.includes("Poési");
+  const isKids = category.includes("enfant") || category.includes("coloriage");
+  const isRiddle = category.includes("nigme");
+  const isColoring = category.includes("coloriage");
 
   const generatePlan = async () => {
     if (!title) return;
@@ -210,6 +219,24 @@ function StudioContent() {
     setEditingChapter(idx);
   };
 
+  const generatePodcast = async (idx: number) => {
+    setGeneratingPodcast(true);
+    setPodcastIdx(idx);
+    setPodcastContent("");
+    try {
+      const res = await fetch("/api/write", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "podcast", bookTitle: title, chapterTitle: chapters[idx].title, chapterIndex: idx + 1, content: chapters[idx].content }),
+      });
+      const data = await res.json();
+      setPodcastContent(data.podcast || "");
+    } catch {
+      setPodcastContent("Erreur lors de la génération. Réessaie.");
+    }
+    setGeneratingPodcast(false);
+  };
+
   const improveText = async () => {
     if (!assistedText.trim()) return;
     setGenerating(true);
@@ -287,6 +314,46 @@ function StudioContent() {
         </div>
       )}
 
+      {/* Podcast modal */}
+      {podcastIdx !== null && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Mic size={16} className="text-pink-400" />
+                <h3 className="text-white font-semibold">Plan d&apos;épisode podcast</h3>
+                {chapters[podcastIdx] && <span className="text-white/40 text-sm">— {chapters[podcastIdx].title}</span>}
+              </div>
+              <button onClick={() => { setPodcastIdx(null); setPodcastContent(""); }} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
+                <X size={15} className="text-white/40" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              {generatingPodcast ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3">
+                  <Loader2 size={24} className="text-pink-400 animate-spin" />
+                  <p className="text-white/50 text-sm">Génération du plan en cours...</p>
+                </div>
+              ) : (
+                <pre className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap font-sans">{podcastContent}</pre>
+              )}
+            </div>
+            {!generatingPodcast && podcastContent && (
+              <div className="p-4 border-t border-white/10 flex gap-2">
+                <button onClick={() => navigator.clipboard.writeText(podcastContent)}
+                  className="flex items-center gap-2 px-4 py-2 bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 rounded-xl text-sm transition-colors">
+                  <Copy size={13} /> Copier
+                </button>
+                <button onClick={() => { setPodcastIdx(null); setPodcastContent(""); }}
+                  className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white/50 rounded-xl text-sm transition-colors ml-auto">
+                  Fermer
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Mode selector */}
       <div className="grid grid-cols-3 gap-4 mb-8">
         {MODES.map(({ id, icon: Icon, label, desc, color }) => (
@@ -338,11 +405,10 @@ function StudioContent() {
                 </div>
               </div>
 
-              {isPoem && (
-                <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl">
-                  <p className="text-purple-300 text-sm">🎭 Mode Poésie activé — L&apos;IA va créer un recueil avec des poèmes émouvants, des images fortes et du rythme.</p>
-                </div>
-              )}
+              {isPoem && <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl"><p className="text-purple-300 text-sm">🎭 Mode Poésie — Recueil de poèmes avec images fortes et rythme.</p></div>}
+              {isColoring && <div className="p-3 bg-pink-500/10 border border-pink-500/20 rounded-xl"><p className="text-pink-300 text-sm">🖍️ Mode Livre de coloriage — Descriptions de scènes à colorier, instructions simples pour enfants. Imprime et distribue !</p></div>}
+              {isRiddle && !isColoring && <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl"><p className="text-amber-300 text-sm">🧩 Mode Énigmes — L&apos;IA génère des devinettes, puzzles et charades avec leurs réponses.</p></div>}
+              {isKids && !isColoring && !isRiddle && <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl"><p className="text-blue-300 text-sm">👶 Mode Livre enfant — Langage ultra simple, phrases courtes, histoires colorées pour 3-8 ans.</p></div>}
               <div>
                 <label className="text-white/60 text-sm mb-2 block">Brief (optionnel)</label>
                 <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
@@ -417,6 +483,10 @@ function StudioContent() {
                       <span className="text-white text-sm font-medium flex-1">{ch.title}</span>
                       {ch.status === "done" && (
                         <div className="flex items-center gap-1">
+                          <button onClick={e => { e.stopPropagation(); generatePodcast(i); }}
+                            className="p-1 hover:bg-white/10 rounded-lg transition-colors" title="Plan podcast pour ce chapitre">
+                            <Mic size={11} className={`text-white/30 hover:text-pink-400 ${generatingPodcast && podcastIdx === i ? "animate-pulse text-pink-400" : ""}`} />
+                          </button>
                           <button onClick={e => { e.stopPropagation(); regenerateChapter(i); }} disabled={regenIdx !== null}
                             className="p-1 hover:bg-white/10 rounded-lg transition-colors" title="Regénérer ce chapitre">
                             <RefreshCw size={11} className={`text-white/30 hover:text-purple-400 ${regenIdx === i ? "animate-spin text-purple-400" : ""}`} />
@@ -443,8 +513,35 @@ function StudioContent() {
                 ))}
               </div>
 
+              {step === "done" && currentBookId && (
+                <div className="mt-5 p-4 bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-2xl">
+                  <div className="flex items-center gap-2 mb-3">
+                    <CheckCircle size={16} className="text-emerald-400" />
+                    <span className="text-white font-semibold text-sm">Livre créé et sauvegardé dans ta bibliothèque !</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => router.push(`/read/${currentBookId}`)}
+                      className="flex items-center gap-2 px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-xl text-sm font-medium transition-colors">
+                      <BookOpen size={14} /> Lire le livre
+                    </button>
+                    <button onClick={() => router.push(`/cover?title=${encodeURIComponent(title)}`)}
+                      className="flex items-center gap-2 px-4 py-2 bg-pink-500/20 border border-pink-500/30 hover:bg-pink-500/30 text-pink-300 rounded-xl text-sm font-medium transition-colors">
+                      🎨 Créer la couverture
+                    </button>
+                    <button onClick={generateDescription} disabled={generatingDesc}
+                      className="flex items-center gap-2 px-4 py-2 bg-amber-500/20 border border-amber-500/30 text-amber-300 rounded-xl text-sm transition-colors disabled:opacity-50">
+                      {generatingDesc ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Description
+                    </button>
+                    <button onClick={() => router.push("/publish")}
+                      className="flex items-center gap-2 px-4 py-2 bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 rounded-xl text-sm transition-colors">
+                      📤 Publier
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {step === "done" && (
-                <div className="flex flex-wrap gap-3 mt-5 pt-4 border-t border-white/5">
+                <div className="flex flex-wrap gap-3 mt-3 pt-3 border-t border-white/5">
                   <button onClick={() => exportToPDF(title, chapters)}
                     className="flex items-center gap-2 px-4 py-2 bg-red-500/20 border border-red-500/30 hover:bg-red-500/30 text-red-300 rounded-xl text-sm font-medium transition-colors">
                     <FileDown size={14} /> Exporter en PDF

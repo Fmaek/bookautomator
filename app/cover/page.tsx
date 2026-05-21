@@ -170,6 +170,7 @@ export default function CoverPage() {
   const [books, setBooks] = useState<Book[]>([]);
   const [assignTarget, setAssignTarget] = useState("");
   const [assigned, setAssigned] = useState(false);
+  const [show3D, setShow3D] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => { setBooks(getBooks()); }, []);
@@ -299,12 +300,37 @@ export default function CoverPage() {
 
           {/* Canvas Preview */}
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 flex flex-col items-center justify-center">
-            <div className="flex items-center gap-2 mb-5">
-              <Sparkles size={14} className="text-emerald-400" />
-              <span className="text-emerald-400 text-sm font-medium">Aperçu temps réel — instantané</span>
+            <div className="flex items-center justify-between mb-5 w-full max-w-xs">
+              <div className="flex items-center gap-2">
+                <Sparkles size={14} className="text-emerald-400" />
+                <span className="text-emerald-400 text-sm font-medium">Aperçu temps réel</span>
+              </div>
+              <button onClick={() => setShow3D(!show3D)}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${show3D ? "bg-purple-500 text-white" : "bg-white/10 text-white/50 hover:text-white"}`}>
+                {show3D ? "Vue 2D" : "Vue 3D"}
+              </button>
             </div>
-            <canvas ref={canvasRef} style={{ width: 224, height: 336 }}
-              className="rounded-xl shadow-2xl shadow-purple-500/25 border border-white/10" />
+            <div style={show3D ? { perspective: "900px" } : {}}>
+              <div style={show3D ? {
+                transform: "rotateY(-28deg) rotateX(4deg)",
+                transformStyle: "preserve-3d",
+                filter: "drop-shadow(30px 30px 50px rgba(0,0,0,0.8))",
+                transition: "transform 0.4s ease",
+              } : { transition: "transform 0.4s ease" }}>
+                <canvas ref={canvasRef} style={{ width: 224, height: 336, borderRadius: show3D ? "4px 12px 12px 4px" : "12px" }}
+                  className="shadow-2xl shadow-purple-500/25 border border-white/10" />
+                {show3D && (
+                  <div style={{
+                    position: "absolute", top: 0, left: -30, width: 30, height: 336,
+                    background: `linear-gradient(to right, ${tpl.c2}, ${tpl.c1})`,
+                    borderRadius: "4px 0 0 4px",
+                    transform: "rotateY(-90deg) translateX(-15px)",
+                    transformOrigin: "right center",
+                    boxShadow: "-5px 0 15px rgba(0,0,0,0.5)",
+                  }} />
+                )}
+              </div>
+            </div>
             <p className="text-white/20 text-xs mt-4">512 × 768 px · Format livre standard</p>
           </div>
         </div>

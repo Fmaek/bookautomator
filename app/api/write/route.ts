@@ -44,6 +44,63 @@ Réponds UNIQUEMENT avec ce JSON: {"chapters": ["Titre 1", "Titre 2", ...]}` },
     if (action === "chapter") {
       const { title, chapterTitle, chapterIndex, totalChapters, category, style } = body;
       const isPoem = category?.includes("Poési");
+      const isKids = category?.includes("enfant");
+      const isColoring = category?.includes("coloriage");
+      const isRiddle = category?.includes("nigme");
+
+      if (isColoring) {
+        const completion = await groq.chat.completions.create({
+          model: MODEL,
+          messages: [
+            { role: "system", content: "Tu crées des livres de coloriage pour enfants. Décris des scènes simples et amusantes à colorier." },
+            { role: "user", content: `Scène de coloriage ${chapterIndex}/${totalChapters} du livre "${title}": "${chapterTitle}".
+Décris une scène simple et colorée pour enfant 3-8 ans.
+Format:
+- SCÈNE: (description visuelle de ce qu'il faut dessiner/colorier)
+- CONSIGNE: (instruction simple pour l'enfant)
+- COULEURS SUGGÉRÉES: (liste de 4-5 couleurs)
+- NIVEAU: (Facile / Moyen)
+Utilise un langage ultra simple et joyeux.` },
+          ],
+          temperature: 0.8, max_tokens: 600,
+        });
+        return NextResponse.json({ content: completion.choices[0].message.content || "" });
+      }
+
+      if (isRiddle) {
+        const completion = await groq.chat.completions.create({
+          model: MODEL,
+          messages: [
+            { role: "system", content: "Tu crées des livres d'énigmes, devinettes et charades en français pour enfants et adultes." },
+            { role: "user", content: `Crée 8-10 énigmes/devinettes sur le thème "${chapterTitle}" pour le livre "${title}".
+Section ${chapterIndex}/${totalChapters}.
+Mix: devinettes classiques, charades, rébus décrits, énigmes logiques.
+Format: **ÉNIGME:** [énoncé] | **RÉPONSE:** [réponse] (en dessous, en petits caractères ou inversé)
+Niveau de difficulté varié: facile à difficile.` },
+          ],
+          temperature: 0.8, max_tokens: 1500,
+        });
+        return NextResponse.json({ content: completion.choices[0].message.content || "" });
+      }
+
+      if (isKids) {
+        const completion = await groq.chat.completions.create({
+          model: MODEL,
+          messages: [
+            { role: "system", content: "Tu écris des histoires pour enfants de 3-8 ans. Phrases très courtes, vocabulaire simple, beaucoup d'action et d'émotions. Toujours positif et éducatif." },
+            { role: "user", content: `Écris le chapitre ${chapterIndex}/${totalChapters} du livre enfant "${title}".
+Titre: "${chapterTitle}"
+- Maximum 200 mots par chapitre
+- Phrases de 5-8 mots maximum
+- Un seul concept par page
+- Beaucoup de dialogue et d'action
+- Termine sur une note positive ou une question pour l'enfant` },
+          ],
+          temperature: 0.85, max_tokens: 800,
+        });
+        return NextResponse.json({ content: completion.choices[0].message.content || "" });
+      }
+
       const styleMap: Record<string, string> = {
         "Motivant": "Style ultra motivant, citations percutantes, énergie contagieuse, appels à l'action puissants.",
         "Storytelling": "Style narratif avec anecdotes réelles, suspense, émotions, le lecteur se voit dans l'histoire.",
@@ -391,6 +448,53 @@ La série doit créer une progression logique et donner envie de lire le suivant
         temperature: 0.4, max_tokens: 300,
       });
       return NextResponse.json({ summary: completion.choices[0].message.content || "" });
+    }
+
+    // ── PODCAST EPISODE PLANNER ───────────────────────────────────────────────
+    if (action === "podcast") {
+      const { chapterTitle, content, bookTitle, chapterIndex } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en podcasting et en adaptation de contenu de livre pour le format audio." },
+          { role: "user", content: `Crée un plan d'épisode de podcast basé sur ce chapitre du livre "${bookTitle}".
+Chapitre ${chapterIndex}: "${chapterTitle}"
+
+Extrait du chapitre:
+${(content || "").substring(0, 2000)}
+
+Structure l'épisode ainsi:
+## 🎙️ TITRE DE L'ÉPISODE
+[titre accrocheur, différent du chapitre]
+
+## ⏱️ DURÉE ESTIMÉE
+[X-Y minutes]
+
+## 🪝 ACCROCHE (0-30 sec)
+[phrase d'accroche percutante pour capter l'attention immédiatement]
+
+## 📋 INTRO (30 sec - 2 min)
+[présentation du sujet + ce que l'auditeur va apprendre]
+
+## 🔑 POINTS CLÉS (liste de 4-6 avec développement)
+1. [Point + développement oral (2-3 phrases)]
+2. ...
+
+## 💡 ANECDOTE / EXEMPLE CONCRET
+[histoire courte ou exemple à raconter]
+
+## ❓ QUESTIONS POUR UN INVITÉ (si applicable)
+[3-5 questions si tu avais un expert en invité]
+
+## 🎯 CALL TO ACTION FINAL
+[invitation à acheter le livre / s'abonner / partager]
+
+## 📝 NOTES DE PRÉPARATION
+[conseils de présentation, ton recommandé, points à ne pas oublier]` },
+        ],
+        temperature: 0.8, max_tokens: 2000,
+      });
+      return NextResponse.json({ podcast: completion.choices[0].message.content || "" });
     }
 
     return NextResponse.json({ error: "Action inconnue" }, { status: 400 });
