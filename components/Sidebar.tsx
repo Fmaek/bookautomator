@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, TrendingUp, BookOpen, Image,
-  CheckSquare, Send, Library, Zap, Megaphone, BarChart2
+  CheckSquare, Send, Library, Zap, Megaphone, BarChart2, Radio
 } from "lucide-react";
 
 const nav = [
@@ -14,6 +14,7 @@ const nav = [
   { href: "/checklist", icon: CheckSquare,     label: "Contrôle Qualité" },
   { href: "/publish",   icon: Send,            label: "Publier" },
   { href: "/marketing", icon: Megaphone,       label: "Marketing Hub" },
+  { href: "/autopost",  icon: Radio,           label: "Post Automatique" },
   { href: "/stats",     icon: BarChart2,       label: "Statistiques" },
   { href: "/library",   icon: Library,         label: "Ma Bibliothèque" },
 ];
