@@ -4,7 +4,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import {
   BookOpen, Zap, Edit3, Layers, Play, Copy, FileText,
   ChevronRight, Loader2, CheckCircle, Plus, Trash2, Save,
-  ArrowLeft, Sparkles, FileDown, AlignLeft
+  ArrowLeft, Sparkles, FileDown, AlignLeft, RefreshCw
 } from "lucide-react";
 import { saveBook, newBook, type Book } from "@/lib/books";
 
@@ -101,6 +101,8 @@ function StudioContent() {
   const [editingChapter, setEditingChapter] = useState<number | null>(null);
   const [currentBookId, setCurrentBookId] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [writingStyle, setWritingStyle] = useState("Motivant");
+  const [regenIdx, setRegenIdx] = useState<number | null>(null);
   const [bookDescription, setBookDescription] = useState("");
   const [generatingDesc, setGeneratingDesc] = useState(false);
   const [showDescription, setShowDescription] = useState(false);
@@ -143,7 +145,7 @@ function StudioContent() {
         const res = await fetch("/api/write", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "chapter", title, chapterTitle: chapters[i].title, chapterIndex: i + 1, totalChapters: chapters.length, category }),
+          body: JSON.stringify({ action: "chapter", title, chapterTitle: chapters[i].title, chapterIndex: i + 1, totalChapters: chapters.length, category, style: writingStyle }),
         });
         const data = await res.json();
         updated[i] = { ...updated[i], content: data.content || "", status: "done" };
@@ -188,6 +190,24 @@ function StudioContent() {
 
   const updateChapterContent = (idx: number, content: string) => {
     setChapters(prev => prev.map((c, i) => i === idx ? { ...c, content } : c));
+  };
+
+  const regenerateChapter = async (idx: number) => {
+    setRegenIdx(idx);
+    setChapters(prev => prev.map((c, i) => i === idx ? { ...c, status: "writing" as const } : c));
+    try {
+      const res = await fetch("/api/write", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "regenerate", title, chapterTitle: chapters[idx].title, chapterIndex: idx + 1, totalChapters: chapters.length, category, style: writingStyle }),
+      });
+      const data = await res.json();
+      setChapters(prev => prev.map((c, i) => i === idx ? { ...c, content: data.content || c.content, status: "done" as const } : c));
+    } catch {
+      setChapters(prev => prev.map((c, i) => i === idx ? { ...c, status: "done" as const } : c));
+    }
+    setRegenIdx(null);
+    setEditingChapter(idx);
   };
 
   const improveText = async () => {
@@ -306,6 +326,18 @@ function StudioContent() {
                   </select>
                 </div>
               </div>
+              <div>
+                <label className="text-white/60 text-sm mb-2 block">Style d&apos;écriture</label>
+                <div className="flex flex-wrap gap-2">
+                  {["Motivant", "Storytelling", "Académique", "Humoristique", "Dramatique"].map(s => (
+                    <button key={s} onClick={() => setWritingStyle(s)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${writingStyle === s ? "bg-purple-500 text-white" : "bg-white/5 text-white/50 hover:text-white"}`}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {isPoem && (
                 <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl">
                   <p className="text-purple-300 text-sm">🎭 Mode Poésie activé — L&apos;IA va créer un recueil avec des poèmes émouvants, des images fortes et du rythme.</p>
@@ -384,7 +416,13 @@ function StudioContent() {
                       {ch.status === "pending" && <div className="w-3.5 h-3.5 rounded-full border border-white/20 shrink-0" />}
                       <span className="text-white text-sm font-medium flex-1">{ch.title}</span>
                       {ch.status === "done" && (
-                        <span className="text-white/30 text-xs">{editingChapter === i ? "▲ fermer" : "✏️ modifier"}</span>
+                        <div className="flex items-center gap-1">
+                          <button onClick={e => { e.stopPropagation(); regenerateChapter(i); }} disabled={regenIdx !== null}
+                            className="p-1 hover:bg-white/10 rounded-lg transition-colors" title="Regénérer ce chapitre">
+                            <RefreshCw size={11} className={`text-white/30 hover:text-purple-400 ${regenIdx === i ? "animate-spin text-purple-400" : ""}`} />
+                          </button>
+                          <span className="text-white/30 text-xs">{editingChapter === i ? "▲" : "✏️"}</span>
+                        </div>
                       )}
                     </div>
                     {ch.status === "writing" && <p className="text-purple-300/60 text-xs animate-pulse px-4 pb-3">Rédaction en cours...</p>}

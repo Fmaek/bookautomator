@@ -3,17 +3,19 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, TrendingUp, BookOpen, Image,
-  CheckSquare, Send, Library, Zap
+  CheckSquare, Send, Library, Zap, Megaphone, BarChart2
 } from "lucide-react";
 
 const nav = [
-  { href: "/", icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/trends", icon: TrendingUp, label: "Tendances Meta" },
-  { href: "/studio", icon: BookOpen, label: "Studio d'Écriture" },
-  { href: "/cover", icon: Image, label: "Couvertures" },
-  { href: "/checklist", icon: CheckSquare, label: "Contrôle Qualité" },
-  { href: "/publish", icon: Send, label: "Publier Partout" },
-  { href: "/library", icon: Library, label: "Ma Bibliothèque" },
+  { href: "/",          icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/trends",    icon: TrendingUp,      label: "Tendances Meta" },
+  { href: "/studio",    icon: BookOpen,        label: "Studio d'Écriture" },
+  { href: "/cover",     icon: Image,           label: "Couvertures" },
+  { href: "/checklist", icon: CheckSquare,     label: "Contrôle Qualité" },
+  { href: "/publish",   icon: Send,            label: "Publier" },
+  { href: "/marketing", icon: Megaphone,       label: "Marketing Hub" },
+  { href: "/stats",     icon: BarChart2,       label: "Statistiques" },
+  { href: "/library",   icon: Library,         label: "Ma Bibliothèque" },
 ];
 
 export default function Sidebar() {
@@ -33,7 +35,7 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 p-3 space-y-1">
+      <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
         {nav.map(({ href, icon: Icon, label }) => {
           const active = path === href;
           return (
