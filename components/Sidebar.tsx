@@ -57,7 +57,7 @@ export default function Sidebar() {
       <div className="p-4 border-t border-white/5">
         <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 text-center">
           <p className="text-xs text-white/40 mb-1">Propulsé par</p>
-          <p className="text-xs font-semibold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Claude AI + DALL-E 3</p>
+          <p className="text-xs font-semibold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Groq AI + Pollinations.ai</p>
         </div>
       </div>
     </aside>
