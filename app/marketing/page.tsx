@@ -1,18 +1,18 @@
 "use client";
 import { useState, useEffect } from "react";
 import {
-  Instagram, Twitter, Linkedin, Mail, Search, Sparkles,
+  Camera, AtSign, Briefcase, Mail, Sparkles,
   Copy, Check, Loader2, RefreshCw, Hash, Calendar,
   TrendingUp, FileText, Mic, BarChart2, BookOpen
 } from "lucide-react";
 import { getBooks, type Book } from "@/lib/books";
 
 const SOCIAL_PLATFORMS = [
-  { id: "instagram", label: "Instagram", icon: Instagram, color: "from-pink-500 to-purple-500" },
+  { id: "instagram", label: "Instagram", icon: Camera,    color: "from-pink-500 to-purple-500" },
   { id: "facebook",  label: "Facebook",  icon: Hash,      color: "from-blue-600 to-blue-400" },
-  { id: "twitter",   label: "Twitter/X", icon: Twitter,   color: "from-sky-500 to-blue-500" },
+  { id: "twitter",   label: "Twitter/X", icon: AtSign,    color: "from-sky-500 to-blue-500" },
   { id: "tiktok",    label: "TikTok",    icon: TrendingUp,color: "from-pink-500 to-red-500" },
-  { id: "linkedin",  label: "LinkedIn",  icon: Linkedin,  color: "from-blue-700 to-blue-500" },
+  { id: "linkedin",  label: "LinkedIn",  icon: Briefcase, color: "from-blue-700 to-blue-500" },
 ];
 
 const TONES = ["Inspirant", "Authentique", "Humoristique", "Direct", "Émotionnel", "Professionnel"];
@@ -128,7 +128,7 @@ export default function MarketingPage() {
 
   const ic = "w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/30 text-sm focus:outline-none focus:border-purple-500/50";
   const tabs = [
-    { id: "social",  label: "Réseaux sociaux", icon: Instagram },
+    { id: "social",  label: "Réseaux sociaux", icon: Camera },
     { id: "email",   label: "Email Marketing",  icon: Mail },
     { id: "content", label: "Contenu & SEO",    icon: FileText },
   ] as const;
