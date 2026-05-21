@@ -553,6 +553,266 @@ Structure l'épisode ainsi:
       return NextResponse.json({ podcast: completion.choices[0].message.content || "" });
     }
 
+    // ── CONTINUE WRITING ─────────────────────────────────────────────────────
+    if (action === "continue") {
+      const { bookTitle, chapterTitle, existingContent, instruction, style, language } = body;
+      const langNote = language && language !== "Français" ? `Écris en ${language}.` : "";
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: SYSTEM_AUTHOR },
+          { role: "user", content: `Continue ce chapitre "${chapterTitle}" du livre "${bookTitle}".
+${langNote}
+Instruction: ${instruction || "Continue naturellement dans le même style et ton."}
+Style: ${style || "Motivant"}
+
+Texte existant (continue directement après):
+${existingContent}
+
+Écris 200 à 400 mots supplémentaires qui s'enchaînent parfaitement. Aucun astérisque, aucun tiret, prose continue.` },
+        ],
+        temperature: 0.85, max_tokens: 1024,
+      });
+      return NextResponse.json({ continuation: completion.choices[0].message.content || "" });
+    }
+
+    // ── AI DIALOGUE / PARAGRAPH REFINEMENT ───────────────────────────────────
+    if (action === "dialogue") {
+      const { bookTitle, paragraph, instruction } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es un éditeur littéraire expert. Tu reformules, améliores ou réécris des paragraphes précis selon les instructions de l'auteur. Tu retournes UNIQUEMENT le nouveau texte, sans explication." },
+          { role: "user", content: `Livre: "${bookTitle}"
+Instruction: ${instruction}
+
+Paragraphe à modifier:
+${paragraph}
+
+Retourne uniquement le paragraphe réécrit, sans commentaire ni explication.` },
+        ],
+        temperature: 0.8, max_tokens: 1024,
+      });
+      return NextResponse.json({ result: completion.choices[0].message.content || "" });
+    }
+
+    // ── BOOKTOK SCRIPT ────────────────────────────────────────────────────────
+    if (action === "booktok") {
+      const { bookTitle, category, description, angle } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en création de contenu viral TikTok/Reels pour les livres (BookTok). Tu crées des scripts courts, dynamiques et qui donnent envie de lire." },
+          { role: "user", content: `Crée 3 scripts BookTok de 30-45 secondes pour le livre "${bookTitle}" (${category || ""}).
+Description: ${description || ""}
+Angle privilégié: ${angle || "curiosité + valeur + shock value"}
+
+Pour chaque script:
+TITRE DU SCRIPT: [titre]
+DURÉE: [X secondes]
+ACCROCHE (0-3s): [phrase choc, question, stat ou révélation]
+DÉVELOPPEMENT (3-25s): [contenu parlé, dynamique, avec sous-titres suggérés]
+RÉVÉLATION/CLIMAX (25-35s): [la punchline ou la valeur clé]
+CTA (35-45s): [appel à l'action naturel]
+TEXTE À L'ÉCRAN: [bullets à afficher]
+HASHTAGS: [10 hashtags]
+---` },
+        ],
+        temperature: 0.9, max_tokens: 2000,
+      });
+      return NextResponse.json({ booktok: completion.choices[0].message.content || "" });
+    }
+
+    // ── NEWSLETTER CHAPTER DRAFT ──────────────────────────────────────────────
+    if (action === "newsletter") {
+      const { bookTitle, chapterTitle, chapterContent, authorName, subscriberCount } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu écris des newsletters d'auteurs qui créent de l'anticipation et fidélisent les lecteurs." },
+          { role: "user", content: `Écris une newsletter d'auteur pour annoncer le chapitre "${chapterTitle}" du livre "${bookTitle}".
+Auteur: ${authorName || "l'auteur"}
+Abonnés: ${subscriberCount || "tes lecteurs"}
+
+Extrait du chapitre:
+${(chapterContent || "").substring(0, 1000)}
+
+Structure:
+OBJET DE L'EMAIL: [objet qui donne envie d'ouvrir]
+PRÉ-HEADER: [texte de prévisualisation]
+
+[Corps — 300-400 mots]
+- Accroche personnelle et sincère (coulisses de l'écriture)
+- Extrait exclusif du chapitre (150 mots max)
+- Ce que le lecteur va découvrir dans ce chapitre
+- Tease du prochain chapitre
+- Signature personnelle de l'auteur` },
+        ],
+        temperature: 0.82, max_tokens: 1500,
+      });
+      return NextResponse.json({ newsletter: completion.choices[0].message.content || "" });
+    }
+
+    // ── CONSISTENCY CHECK ─────────────────────────────────────────────────────
+    if (action === "consistency") {
+      const { bookTitle, chapters } = body;
+      const chapterSummaries = (chapters as { title: string; content: string }[])
+        .map((c, i) => `Ch.${i + 1} "${c.title}": ${c.content.substring(0, 300)}`)
+        .join("\n\n");
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es un éditeur professionnel spécialisé dans la cohérence et la continuité des manuscrits." },
+          { role: "user", content: `Vérifie la cohérence globale du livre "${bookTitle}".
+
+Résumés de chapitres:
+${chapterSummaries}
+
+Analyse et identifie:
+1. INCOHÉRENCES DÉTECTÉES (contradictions, répétitions de concepts, changements de ton)
+2. PROGRESSION NARRATIVE (est-ce que les chapitres s'enchaînent logiquement ?)
+3. TON ET STYLE (est-il cohérent tout au long du livre ?)
+4. CONCEPTS RÉPÉTÉS (idées qui reviennent trop souvent)
+5. CHAPITRES FAIBLES (ceux qui semblent hors-sujet ou sous-développés)
+6. SUGGESTIONS D'AMÉLIORATION (3-5 recommandations concrètes)
+7. SCORE DE COHÉRENCE /10` },
+        ],
+        temperature: 0.5, max_tokens: 1500,
+      });
+      return NextResponse.json({ consistency: completion.choices[0].message.content || "" });
+    }
+
+    // ── DUPLICATE DETECTOR ────────────────────────────────────────────────────
+    if (action === "duplicates") {
+      const { bookTitle, content } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es un éditeur qui détecte les répétitions et redondances dans les manuscrits." },
+          { role: "user", content: `Analyse ce texte du livre "${bookTitle}" pour identifier:
+1. MOTS/EXPRESSIONS SURUTILISÉS (avec fréquence estimée et alternatives suggérées)
+2. IDÉES RÉPÉTÉES (concepts exprimés plusieurs fois identiquement)
+3. STRUCTURES DE PHRASES REDONDANTES (patterns qui reviennent)
+4. SCORE DE VARIÉTÉ LEXICALE /10
+5. TOP 5 SUGGESTIONS pour enrichir le vocabulaire
+
+Texte (premiers 4000 mots):
+${(content || "").substring(0, 4000)}` },
+        ],
+        temperature: 0.4, max_tokens: 1200,
+      });
+      return NextResponse.json({ duplicates: completion.choices[0].message.content || "" });
+    }
+
+    // ── REVIEW REQUEST DM ─────────────────────────────────────────────────────
+    if (action === "review_request") {
+      const { bookTitle, authorName, platform } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu écris des messages de demande d'avis chaleureux et non intrusifs pour les auteurs indépendants." },
+          { role: "user", content: `Crée 3 variantes de messages de demande d'avis pour le livre "${bookTitle}" de ${authorName || "l'auteur"}.
+Plateforme cible: ${platform || "Amazon / Kobo / tous"}
+
+Variante 1: Message court (DM Instagram/Facebook — 50 mots)
+Variante 2: Email personnel (150 mots)
+Variante 3: Message post-achat automatique (100 mots)
+
+Chaque message doit être:
+- Chaleureux et sincère, pas spam
+- Reconnaissant envers le lecteur
+- Précis sur COMMENT et OÙ laisser un avis
+- Avec une touche personnelle
+Sépare par ---` },
+        ],
+        temperature: 0.75, max_tokens: 1200,
+      });
+      return NextResponse.json({ messages: completion.choices[0].message.content || "" });
+    }
+
+    // ── PROMO CALENDAR (30 days) ──────────────────────────────────────────────
+    if (action === "promo_calendar") {
+      const { bookTitle, launchDate, authorName, platforms } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en stratégie de lancement de livres numériques et en marketing de contenu." },
+          { role: "user", content: `Crée un calendrier de promotion 30 jours détaillé pour "${bookTitle}" de ${authorName || "l'auteur"}.
+Date de lancement: ${launchDate || "J+14"}
+Plateformes: ${platforms || "Instagram, Facebook, TikTok"}
+
+Phases:
+- J-14 à J-1: Pré-lancement (teasing, extraits, behind-the-scenes)
+- J0: Lancement officiel
+- J+1 à J+7: Momentum post-lancement
+- J+8 à J+14: Maintien + témoignages
+- J+15 à J+30: Stratégie long terme
+
+Pour chaque jour fournis:
+JOUR | DATE | PLATEFORME | TYPE | IDÉE DE CONTENU | HOOK/ACCROCHE
+Format tableau, 30 lignes.` },
+        ],
+        temperature: 0.75, max_tokens: 3000,
+      });
+      return NextResponse.json({ calendar: completion.choices[0].message.content || "" });
+    }
+
+    // ── LANDING PAGE COPY ─────────────────────────────────────────────────────
+    if (action === "landing") {
+      const { bookTitle, authorName, description, category, price } = body;
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu es expert en copywriting de pages de vente pour livres numériques." },
+          { role: "user", content: `Écris le contenu complet d'une page de vente pour le livre "${bookTitle}" par ${authorName || "l'auteur"}.
+Catégorie: ${category || "Non-fiction"}
+Description: ${description || ""}
+Prix: ${price || "9,99€"}
+
+Structure:
+TITRE PRINCIPAL (H1): [accroche puissante]
+SOUS-TITRE: [promesse de résultat]
+HERO TEXT: [2-3 phrases d'impact]
+PROBLÈME: [douleur du lecteur, 100 mots]
+PROMESSE: [ce que le livre va changer, 100 mots]
+CE QUE TU VAS APPRENDRE: [6-8 bullet points]
+POUR QUI: [profil idéal du lecteur, 80 mots]
+À PROPOS DE L'AUTEUR: [bio courte, 80 mots]
+TÉMOIGNAGES: [3 avis fictifs réalistes à remplacer]
+PRIX + CTA: [argument de valeur + bouton d'achat]
+FAQ: [5 questions/réponses courtes]
+GARANTIE: [texte de garantie 30 jours]` },
+        ],
+        temperature: 0.82, max_tokens: 3000,
+      });
+      return NextResponse.json({ landing: completion.choices[0].message.content || "" });
+    }
+
+    // ── BUNDLE DESCRIPTION ────────────────────────────────────────────────────
+    if (action === "bundle_desc") {
+      const { books, bundleTitle } = body;
+      const bookList = (books as string[]).join(", ");
+      const completion = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Tu crées des descriptions percutantes pour des bundles de livres numériques." },
+          { role: "user", content: `Crée une description de vente pour ce bundle: "${bundleTitle}"
+Livres inclus: ${bookList}
+
+Fournis:
+TITRE DU BUNDLE: [titre vendeur]
+SOUS-TITRE: [promesse + valeur]
+DESCRIPTION COURTE (100 mots): pour les places de marché
+DESCRIPTION LONGUE (300 mots): page de vente complète
+CE QUI EST INCLUS: [liste des livres avec 1 phrase chacun]
+VALEUR TOTALE: [argument de prix]
+POUR QUI: [profil lecteur idéal]` },
+        ],
+        temperature: 0.8, max_tokens: 1500,
+      });
+      return NextResponse.json({ description: completion.choices[0].message.content || "" });
+    }
+
     return NextResponse.json({ error: "Action inconnue" }, { status: 400 });
 
   } catch (err: unknown) {

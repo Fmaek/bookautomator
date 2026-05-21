@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Download, Wand2, Layout, RefreshCw, Palette, Sparkles, BookOpen, Check } from "lucide-react";
+import QRCode from "qrcode";
+import { Download, Wand2, Layout, RefreshCw, Palette, Sparkles, BookOpen, Check, Grid3x3, QrCode } from "lucide-react";
 import { getBooks, saveBook, type Book } from "@/lib/books";
 
 const TEMPLATES = [
@@ -230,10 +231,32 @@ export default function CoverPage() {
   const [assignTarget, setAssignTarget] = useState("");
   const [assigned, setAssigned]   = useState(false);
   const [show3D, setShow3D]       = useState(false);
+  const [abVariants, setAbVariants] = useState<string[]>([]);
+  const [abLoading, setAbLoading] = useState(false);
+  const [qrUrl, setQrUrl]         = useState("");
+  const [showQr, setShowQr]       = useState(false);
   const canvasRef   = useRef<HTMLCanvasElement>(null);
   const aiCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  useEffect(() => { setBooks(getBooks()); }, []);
+  useEffect(() => {
+    const allBooks = getBooks();
+    setBooks(allBooks);
+    // Auto-fill from URL params (e.g. navigating from Studio or Library)
+    const params = new URLSearchParams(window.location.search);
+    const urlTitle  = params.get("title");
+    const urlBookId = params.get("bookId");
+    if (urlBookId) {
+      const b = allBooks.find(bk => bk.id === urlBookId);
+      if (b) {
+        setTitle(b.title);
+        setAuthor(b.authorName || "");
+        setAssignTarget(b.id);
+        setTab("ai");
+        return;
+      }
+    }
+    if (urlTitle) setTitle(decodeURIComponent(urlTitle));
+  }, []);
 
   const redraw = useCallback(() => {
     if (canvasRef.current) drawCover(canvasRef.current, title, author, subtitle, tpl, deco);
@@ -278,17 +301,57 @@ export default function CoverPage() {
     setTimeout(() => setAssigned(false), 2500);
   };
 
+  const buildPromptUrl = (seed: number) => {
+    const prompt = encodeURIComponent(
+      `Professional book cover illustration, no text, no letters, no words. ${aiPrompt || `Theme: "${title}"`}. Cinematic lighting, dramatic atmosphere, portrait 3:4 format, bestseller quality, ultra HD photorealistic.`
+    );
+    return `https://image.pollinations.ai/prompt/${prompt}?width=512&height=768&seed=${seed}&model=${aiModel}&nologo=true&enhance=true`;
+  };
+
   const generateAI = () => {
     if (!aiPrompt && !title) return;
     setAiLoading(true);
     setAiReady(false);
     setAiUrl("");
-    const seed = Math.floor(Math.random() * 99999);
-    const prompt = encodeURIComponent(
-      `Professional book cover illustration, no text, no letters, no words. ${aiPrompt || `Theme: "${title}"`}. Cinematic lighting, dramatic atmosphere, portrait 3:4 format, bestseller quality, ultra HD photorealistic.`
-    );
-    const url = `https://image.pollinations.ai/prompt/${prompt}?width=512&height=768&seed=${seed}&model=${aiModel}&nologo=true&enhance=true`;
+    setAbVariants([]);
+    setAiUrl(buildPromptUrl(Math.floor(Math.random() * 99999)));
+  };
+
+  const generateVariants = () => {
+    if (!aiPrompt && !title) return;
+    setAbLoading(true);
+    setAbVariants([
+      buildPromptUrl(Math.floor(Math.random() * 99999)),
+      buildPromptUrl(Math.floor(Math.random() * 99999)),
+      buildPromptUrl(Math.floor(Math.random() * 99999)),
+    ]);
+  };
+
+  const selectVariant = (url: string) => {
+    setAiLoading(true);
+    setAiReady(false);
     setAiUrl(url);
+    setAbVariants([]);
+    setAbLoading(false);
+  };
+
+  const applyQrCode = async () => {
+    if (!aiCanvasRef.current || !qrUrl) return;
+    try {
+      const qrDataUrl = await QRCode.toDataURL(qrUrl, { width: 80, margin: 1, color: { dark: "#ffffff", light: "#00000000" } });
+      const qrImg = new window.Image();
+      qrImg.onload = () => {
+        const ctx = aiCanvasRef.current!.getContext("2d");
+        if (!ctx) return;
+        const padding = 12;
+        const size = 70;
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.fillRect(W - size - padding * 2 - 2, padding, size + padding * 2, size + padding * 2);
+        ctx.drawImage(qrImg, W - size - padding, padding + padding, size, size);
+      };
+      qrImg.src = qrDataUrl;
+    } catch (e) { console.error(e); }
+    setShowQr(false);
   };
 
   const handleAiLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -302,25 +365,32 @@ export default function CoverPage() {
 
   const ic = "w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 text-sm focus:outline-none focus:border-purple-500/50";
 
-  const AssignSection = ({ from }: { from: "canvas" | "ai" }) => (
-    books.length > 0 ? (
-      <div className="pt-3 border-t border-white/5">
-        <label className="text-white/60 text-sm mb-2 flex items-center gap-1"><BookOpen size={13} /> Assigner à un livre</label>
-        <div className="flex gap-2">
-          <select value={assignTarget} onChange={e => setAssignTarget(e.target.value)}
-            className="flex-1 bg-[#111] border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none">
-            <option value="">Choisir un livre...</option>
-            {books.map(b => <option key={b.id} value={b.id}>{b.title}</option>)}
-          </select>
-          <button onClick={() => assignCoverToBook(from)} disabled={!assignTarget || (from === "ai" && !aiReady)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-40 ${assigned ? "bg-emerald-500 text-white" : "bg-purple-500 hover:bg-purple-600 text-white"}`}>
-            {assigned ? <><Check size={14} /> Assignée</> : "Assigner"}
-          </button>
-        </div>
-        {assigned && <p className="text-emerald-400 text-xs mt-1.5">✓ Couverture sauvegardée dans la bibliothèque</p>}
+  const handleAssignSelect = (bookId: string) => {
+    setAssignTarget(bookId);
+    const b = books.find(bk => bk.id === bookId);
+    if (b) {
+      setTitle(b.title);
+      setAuthor(b.authorName || "");
+    }
+  };
+
+  const renderAssignSection = (from: "canvas" | "ai") => books.length > 0 ? (
+    <div className="pt-3 border-t border-white/5">
+      <label className="text-white/60 text-sm mb-2 flex items-center gap-1"><BookOpen size={13} /> Assigner à un livre</label>
+      <div className="flex gap-2">
+        <select value={assignTarget} onChange={e => handleAssignSelect(e.target.value)}
+          className="flex-1 bg-[#111] border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none">
+          <option value="">Choisir un livre...</option>
+          {books.map(b => <option key={b.id} value={b.id}>{b.title}</option>)}
+        </select>
+        <button onClick={() => assignCoverToBook(from)} disabled={!assignTarget || (from === "ai" && !aiReady)}
+          className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-40 ${assigned ? "bg-emerald-500 text-white" : "bg-purple-500 hover:bg-purple-600 text-white"}`}>
+          {assigned ? <><Check size={14} /> Assignée</> : "Assigner"}
+        </button>
       </div>
-    ) : null
-  );
+      {assigned && <p className="text-emerald-400 text-xs mt-1.5">✓ Couverture sauvegardée dans la bibliothèque</p>}
+    </div>
+  ) : null;
 
   return (
     <div className="p-8 min-h-screen">
@@ -381,7 +451,7 @@ export default function CoverPage() {
               </div>
             </div>
 
-            <AssignSection from="canvas" />
+            {renderAssignSection("canvas")}
 
             <button onClick={downloadCanvas}
               className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-xl font-medium transition-all">
@@ -457,20 +527,50 @@ export default function CoverPage() {
               </div>
             </div>
 
-            <button onClick={generateAI} disabled={aiLoading || (!aiPrompt && !title)}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 text-white rounded-xl font-medium transition-all">
-              {aiLoading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Wand2 size={16} />}
-              {aiLoading ? "Génération en cours..." : "Générer la couverture"}
-            </button>
+            <div className="flex gap-2">
+              <button onClick={generateAI} disabled={aiLoading || (!aiPrompt && !title)}
+                className="flex-1 flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 text-white rounded-xl font-medium transition-all">
+                {aiLoading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Wand2 size={16} />}
+                {aiLoading ? "Génération..." : "Générer"}
+              </button>
+              <button onClick={generateVariants} disabled={abLoading || (!aiPrompt && !title)}
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-white/5 border border-white/10 hover:bg-white/10 disabled:opacity-50 text-white/70 rounded-xl text-sm font-medium transition-all"
+                title="Générer 3 variantes A/B/C">
+                <Grid3x3 size={15} />
+              </button>
+            </div>
 
             {aiReady && (
               <>
-                <AssignSection from="ai" />
-                <button onClick={downloadAiCanvas}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-500/20 border border-emerald-500/30 hover:bg-emerald-500/30 text-emerald-300 rounded-xl text-sm font-medium transition-all">
-                  <Download size={14} /> Télécharger (avec titre + auteur)
-                </button>
+                {renderAssignSection("ai")}
+                <div className="flex gap-2">
+                  <button onClick={downloadAiCanvas}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-500/20 border border-emerald-500/30 hover:bg-emerald-500/30 text-emerald-300 rounded-xl text-sm font-medium transition-all">
+                    <Download size={14} /> Télécharger
+                  </button>
+                  <button onClick={() => setShowQr(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 text-white/60 rounded-xl text-sm transition-all"
+                    title="Ajouter QR code">
+                    <QrCode size={14} />
+                  </button>
+                </div>
               </>
+            )}
+
+            {/* QR code panel */}
+            {showQr && (
+              <div className="p-4 bg-white/[0.03] border border-white/[0.06] rounded-xl space-y-3">
+                <p className="text-white/60 text-sm font-medium">QR Code sur la couverture</p>
+                <input value={qrUrl} onChange={e => setQrUrl(e.target.value)}
+                  placeholder="https://ton-site.com/livre" className={ic} />
+                <div className="flex gap-2">
+                  <button onClick={applyQrCode} disabled={!qrUrl}
+                    className="flex-1 py-2 bg-purple-500/20 border border-purple-500/30 hover:bg-purple-500/30 text-purple-300 rounded-xl text-sm transition-colors disabled:opacity-40">
+                    Appliquer le QR code
+                  </button>
+                  <button onClick={() => setShowQr(false)} className="px-4 py-2 bg-white/5 text-white/40 rounded-xl text-sm">Annuler</button>
+                </div>
+              </div>
             )}
           </div>
 
@@ -512,11 +612,37 @@ export default function CoverPage() {
               </div>
             )}
 
-            {aiReady && (
+            {aiReady && !abVariants.length && (
               <button onClick={generateAI}
                 className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-white/60 rounded-xl text-sm mt-2">
                 <RefreshCw size={13} /> Regénérer
               </button>
+            )}
+
+            {/* A/B/C Variants grid */}
+            {abVariants.length > 0 && (
+              <div className="w-full">
+                <p className="text-white/50 text-xs mb-3 text-center">Clique pour sélectionner une variante</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {abVariants.map((url, i) => (
+                    <div key={i} className="relative group">
+                      <button onClick={() => selectVariant(url)} className="w-full">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt={`Variante ${String.fromCharCode(65 + i)}`}
+                          onLoad={() => i === abVariants.length - 1 && setAbLoading(false)}
+                          className="w-full rounded-xl border border-white/10 group-hover:border-purple-500/60 transition-all" />
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all rounded-xl flex items-center justify-center">
+                          <span className="text-white font-bold text-sm">Choisir {String.fromCharCode(65 + i)}</span>
+                        </div>
+                      </button>
+                      <span className="absolute top-2 left-2 bg-purple-500 text-white text-xs font-bold px-2 py-0.5 rounded-lg">
+                        {String.fromCharCode(65 + i)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {abLoading && <p className="text-white/30 text-xs text-center mt-2">Chargement des variantes...</p>}
+              </div>
             )}
           </div>
         </div>
@@ -524,3 +650,4 @@ export default function CoverPage() {
     </div>
   );
 }
+

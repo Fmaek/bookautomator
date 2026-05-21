@@ -3,7 +3,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, TrendingUp, BookOpen, Image,
-  CheckSquare, Send, Library, Zap, Megaphone, BarChart2, Radio
+  CheckSquare, Send, Library, Zap, Megaphone, BarChart2, Radio,
+  Calendar, DollarSign, Package, Globe
 } from "lucide-react";
 
 const nav = [
@@ -15,6 +16,10 @@ const nav = [
   { href: "/publish",   icon: Send,            label: "Publier" },
   { href: "/marketing", icon: Megaphone,       label: "Marketing Hub" },
   { href: "/autopost",  icon: Radio,           label: "Post Automatique" },
+  { href: "/calendar",  icon: Calendar,        label: "Calendrier Promo" },
+  { href: "/sales",     icon: DollarSign,      label: "Ventes & Revenus" },
+  { href: "/bundle",    icon: Package,         label: "Bundle Builder" },
+  { href: "/landing",   icon: Globe,           label: "Page de Vente" },
   { href: "/stats",     icon: BarChart2,       label: "Statistiques" },
   { href: "/library",   icon: Library,         label: "Ma Bibliothèque" },
 ];
