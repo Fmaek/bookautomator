@@ -69,8 +69,13 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
       if (!t) return null;
       if (t.startsWith("## ")) return <h2 key={i} className="text-xl font-bold text-white/90 mt-8 mb-3 border-b border-white/10 pb-2">{t.slice(3)}</h2>;
       if (t.startsWith("### ")) return <h3 key={i} className="text-lg font-semibold text-white/80 mt-6 mb-2">{t.slice(4)}</h3>;
-      const bold = t.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-      return <p key={i} className="text-white/75 leading-relaxed mb-4" dangerouslySetInnerHTML={{ __html: bold }} />;
+      // Strip list markers, convert bold/italic markdown to HTML
+      const clean = t
+        .replace(/^[-*]\s+/gm, "")          // strip bullet list markers
+        .replace(/^\d+\.\s+/gm, "")          // strip numbered list markers
+        .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+        .replace(/\*(.*?)\*/g, "<em>$1</em>");
+      return <p key={i} className="text-white/75 leading-relaxed mb-4" dangerouslySetInnerHTML={{ __html: clean }} />;
     });
   };
 

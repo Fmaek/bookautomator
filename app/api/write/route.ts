@@ -4,10 +4,14 @@ import Groq from "groq-sdk";
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const MODEL = "llama-3.3-70b-versatile";
 
-const SYSTEM_AUTHOR = `Tu es un auteur professionnel francophone reconnu. Ton style est:
-- Captivant dès la première phrase, phrases rythmées
-- Vocabulaire riche mais accessible, exemples concrets
-- Aucun remplissage, chaque mot a sa raison d'être
+const SYSTEM_AUTHOR = `Tu es un auteur professionnel francophone publié chez de grands éditeurs.
+RÈGLES ABSOLUES — ne jamais enfreindre:
+- Texte fluide et naturel, JAMAIS de markdown
+- INTERDIT: astérisques (**gras**), dièses (## titre), tirets de liste (- item)
+- Pas de titres ni sous-titres dans le corps du texte
+- Pas de listes à puces ni numérotées
+- Prose continue, paragraphes naturels, comme un vrai livre publié
+- Vocabulaire riche, chaque phrase est intentionnelle
 Toujours en français impeccable.`;
 
 export async function POST(req: NextRequest) {
@@ -101,31 +105,81 @@ Titre: "${chapterTitle}"
         return NextResponse.json({ content: completion.choices[0].message.content || "" });
       }
 
-      const styleMap: Record<string, string> = {
-        "Motivant": "Style ultra motivant, citations percutantes, énergie contagieuse, appels à l'action puissants.",
-        "Storytelling": "Style narratif avec anecdotes réelles, suspense, émotions, le lecteur se voit dans l'histoire.",
-        "Académique": "Style structuré et rigoureux, données chiffrées, références, argumentation solide.",
-        "Humoristique": "Style léger et drôle, anecdotes amusantes, auto-dérision, rendant les concepts accessibles.",
-        "Dramatique": "Style intense, images fortes, révélations choc, tension narrative permanente.",
+      if (isPoem) {
+        const completion = await groq.chat.completions.create({
+          model: MODEL,
+          messages: [
+            { role: "system", content: SYSTEM_AUTHOR },
+            { role: "user", content: `Écris le poème "${chapterTitle}" du recueil "${title}" (${chapterIndex}/${totalChapters}).
+20-30 vers, images fortes, rythme soutenu, strophes de 4-6 vers.
+Langage poétique dense, métaphores originales. Termine sur une image inoubliable.
+Aucun astérisque, aucun tiret de liste, aucun titre.` },
+          ],
+          temperature: 0.9, max_tokens: 2048,
+        });
+        return NextResponse.json({ content: completion.choices[0].message.content || "" });
+      }
+
+      const stylePrompts: Record<string, string> = {
+        "Motivant": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}".
+
+Tu es un coach qui parle directement au lecteur avec énergie et conviction totale.
+Tutoie le lecteur tout au long. Commence par une histoire vraie ou une situation que le lecteur a déjà vécue — il doit se reconnaître dès la première ligne.
+Développe une ou deux idées fortes en profondeur : montre le problème, puis offre une clé de transformation concrète avec un exemple de vie réelle.
+Utilise des images puissantes, des comparaisons frappantes. Interpelle, challenge, secoue le lecteur avec bienveillance.
+Conclus par un appel à l'action court et percutant qui donne envie d'agir maintenant.
+600 à 800 mots, paragraphes courts de 2 à 4 lignes, rythme vif et enlevé.`,
+
+        "Storytelling": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}".
+
+Tu es un narrateur expert qui captive comme un romancier. Plonge le lecteur dans une scène concrète et visuelle dès la première phrase — on voit, on entend, on ressent.
+Développe l'histoire avec personnages, situation, tension progressive et révélation.
+Alterne moments d'immersion narrative et insights subtils sans jamais rompre le flux.
+Le lecteur vit la situation plutôt que de la lire. La leçon émerge naturellement de l'histoire, sans être expliquée comme dans un manuel.
+600 à 800 mots, style romanesque mais instructif, rythme cinématographique.`,
+
+        "Académique": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}".
+
+Tu es un essayiste rigoureux et accessible. Pose la thèse centrale du chapitre en ouverture avec une formulation nette et mémorable.
+Développe avec une argumentation solide : faits vérifiables, données chiffrées, perspectives d'experts ou études pertinentes.
+Construis un raisonnement progressif — chaque paragraphe ajoute une brique logique au précédent.
+Conclure sur une synthèse qui élargit la réflexion.
+600 à 800 mots, prose continue et dense mais aérée, comme un essai philosophique ou scientifique grand public.`,
+
+        "Humoristique": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}".
+
+Tu es un auteur brillant qui mélange humour fin et vraie substance. Commence par une anecdote absurde du quotidien ou une observation décalée que tout le monde reconnaît.
+Mélange ironie subtile, auto-dérision et conseils pratiques réels. Le lecteur rit et apprend sans s'en rendre compte.
+Ton conversationnel et décontracté, comme un ami intelligent et drôle qui partage ses découvertes autour d'un verre.
+Évite le burlesque gratuit : chaque blague porte un vrai message.
+600 à 800 mots, style fluide et vivant avec une vraie chute à la fin.`,
+
+        "Dramatique": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}".
+
+Tu écris avec une intensité cinématographique. Commence par une révélation-choc ou une situation de crise viscérale — le lecteur doit sentir l'urgence dès les premiers mots.
+Maintiens une tension narrative permanente : chaque paragraphe dévoile quelque chose qui amplifie l'enjeu.
+Utilise des images fortes, un vocabulaire puissant et émotionnel. Fais ressentir les enjeux dans le corps du lecteur.
+Construis vers un moment de vérité, une prise de conscience intense.
+600 à 800 mots, langue tendue, rythme haletant, prose dramatique continue.`,
       };
-      const styleInstr = styleMap[style] || "Style professionnel, clair et engageant.";
+
+      const chapterPrompt = stylePrompts[style] || `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}".
+Commence par une accroche forte qui capture l'attention immédiatement.
+Développe avec profondeur, des exemples concrets et une progression naturelle.
+Termine par une phrase mémorable qui donne envie de lire la suite.
+600 à 800 mots, prose fluide et engageante.`;
+
+      const noMarkdownReminder = `
+
+RÈGLE ABSOLUE: aucun astérisque, aucun dièse, aucun tiret de liste, aucun sous-titre. Prose continue uniquement, comme dans un livre imprimé.`;
+
       const completion = await groq.chat.completions.create({
         model: MODEL,
         messages: [
-          { role: "system", content: `${SYSTEM_AUTHOR}\n${styleInstr}` },
-          { role: "user", content: isPoem
-            ? `Écris le poème "${chapterTitle}" du recueil "${title}" (${chapterIndex}/${totalChapters}).
-20-30 vers, images fortes, rythme, strophes de 4-6 vers. Termine sur une image mémorable.`
-            : `Écris le chapitre ${chapterIndex}/${totalChapters} du livre "${title}".
-Titre: "${chapterTitle}"
-- Commence par une accroche forte (anecdote, question, stat surprenante)
-- 500-700 mots, qualité professionnelle
-- 2-3 sous-titres structurants
-- Au moins 1 exemple concret ou histoire vraie
-- Termine sur une phrase mémorable
-Écris directement le contenu.` },
+          { role: "system", content: SYSTEM_AUTHOR },
+          { role: "user", content: chapterPrompt + noMarkdownReminder },
         ],
-        temperature: 0.85, max_tokens: 2048,
+        temperature: 0.88, max_tokens: 2048,
       });
       return NextResponse.json({ content: completion.choices[0].message.content || "" });
     }
@@ -134,17 +188,19 @@ Titre: "${chapterTitle}"
     if (action === "regenerate") {
       const { title, chapterTitle, chapterIndex, totalChapters, category, style, instruction } = body;
       const isPoem = category?.includes("Poési");
+      const styleNote = style ? `Style imposé: ${style}.` : "";
       const completion = await groq.chat.completions.create({
         model: MODEL,
         messages: [
           { role: "system", content: SYSTEM_AUTHOR },
           { role: "user", content: isPoem
-            ? `Réécris le poème "${chapterTitle}" du recueil "${title}" différemment. ${instruction || "Version plus émotionnelle."}`
-            : `Réécris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" COMPLÈTEMENT DIFFÉREMMENT.
-${instruction ? `Instruction: ${instruction}` : "Nouvelle approche, nouveaux exemples, angle différent."}
-Style: ${style || "professionnel"}. 500-700 mots.` },
+            ? `Réécris le poème "${chapterTitle}" du recueil "${title}" avec une approche totalement différente. ${instruction || "Version plus émotionnelle et imagée."} Aucun astérisque ni tiret.`
+            : `Réécris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" avec un angle entièrement nouveau.
+${instruction ? `Instruction spécifique: ${instruction}` : "Nouveaux exemples, nouvelle entrée en matière, perspective différente."}
+${styleNote}
+600 à 800 mots, prose fluide et naturelle. Aucun astérisque, aucun sous-titre, aucune liste.` },
         ],
-        temperature: 0.9, max_tokens: 2048,
+        temperature: 0.92, max_tokens: 2048,
       });
       return NextResponse.json({ content: completion.choices[0].message.content || "" });
     }
@@ -155,7 +211,7 @@ Style: ${style || "professionnel"}. 500-700 mots.` },
       const completion = await groq.chat.completions.create({
         model: MODEL,
         messages: [
-          { role: "system", content: "Tu es un éditeur professionnel. Améliore le texte: fluidité, impact, vocabulaire. Garde le sens, retourne UNIQUEMENT le texte amélioré." },
+          { role: "system", content: "Tu es un éditeur littéraire professionnel. Améliore le texte: fluidité, impact, vocabulaire, rythme. Garde le sens et la longueur approximative. Supprime tous les astérisques, tirets de liste et marqueurs markdown. Retourne UNIQUEMENT le texte amélioré en prose continue." },
           { role: "user", content: text },
         ],
         temperature: 0.6, max_tokens: 4096,

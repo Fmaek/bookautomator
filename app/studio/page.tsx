@@ -38,7 +38,14 @@ function exportToPDF(title: string, chapters: Chapter[]) {
   const content = chapters.map(c => `
     <div class="chapter">
       <h2>${c.title}</h2>
-      <div class="chapter-body">${c.content.replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>").replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")}</div>
+      <div class="chapter-body">${c.content
+        .replace(/^[-*]\s+/gm, "")
+        .replace(/^\d+\.\s+/gm, "")
+        .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+        .replace(/\*(.*?)\*/g, "<em>$1</em>")
+        .replace(/^#{1,3}\s+(.+)$/gm, "<strong>$1</strong>")
+        .replace(/\n\n/g, "</p><p>")
+        .replace(/\n/g, "<br>")}</div>
     </div>
   `).join('<div class="page-break"></div>');
 

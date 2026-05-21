@@ -15,6 +15,12 @@ const TEMPLATES = [
 ];
 
 const DECOS = ["cercles", "lignes", "points", "aucune"] as const;
+const AI_MODELS = [
+  { id: "flux",       label: "FLUX (recommandé)" },
+  { id: "turbo",      label: "Turbo (rapide)"    },
+  { id: "qwen-vl-max",label: "Qwen (Alibaba)"    },
+  { id: "gptimage1",  label: "GPT Image"         },
+];
 
 const W = 512, H = 768;
 
@@ -48,14 +54,12 @@ function drawCover(
   canvas.width = W;
   canvas.height = H;
 
-  // Background gradient
   const bg = ctx.createLinearGradient(0, 0, 0, H);
   bg.addColorStop(0, tpl.c1);
   bg.addColorStop(1, tpl.c2);
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  // Decorations
   ctx.save();
   ctx.globalAlpha = 0.12;
   ctx.strokeStyle = tpl.accent;
@@ -85,15 +89,11 @@ function drawCover(
   }
   ctx.restore();
 
-  // ── Accent bars top & bottom ──
   ctx.fillStyle = tpl.accent;
   ctx.fillRect(0, 0, W, 7);
   ctx.fillRect(0, H - 7, W, 7);
-
-  // ── Left vertical accent line ──
   ctx.fillRect(44, 90, 3, H - 180);
 
-  // ── AUTHOR NAME (top, accent color) ──
   const authorDisplay = (author || "Auteur").toUpperCase();
   ctx.font = "bold 21px Arial, Helvetica, sans-serif";
   ctx.fillStyle = tpl.accent;
@@ -101,29 +101,21 @@ function drawCover(
   ctx.textBaseline = "alphabetic";
   ctx.fillText(authorDisplay, 62, 76);
 
-  // ── TITLE (large, white, word-wrapped) ──
   const titleText = title || "Titre du Livre";
   const maxW = W - 124;
-
   let fs = 62;
   ctx.font = `bold ${fs}px Arial, Helvetica, sans-serif`;
-  // Shrink font until first word fits (rough measure)
   while (ctx.measureText(titleText).width > maxW * 2.5 && fs > 26) {
     fs -= 3;
     ctx.font = `bold ${fs}px Arial, Helvetica, sans-serif`;
   }
-
   const lines = wrapText(ctx, titleText, maxW);
   const lh = fs * 1.28;
   const totalTitleH = lines.length * lh;
   const titleStartY = H * 0.46 - totalTitleH / 2;
-
   ctx.fillStyle = "#ffffff";
-  lines.forEach((l, i) => {
-    ctx.fillText(l, 62, titleStartY + i * lh);
-  });
+  lines.forEach((l, i) => { ctx.fillText(l, 62, titleStartY + i * lh); });
 
-  // ── Accent divider line ──
   const divY = titleStartY + totalTitleH + 22;
   ctx.strokeStyle = tpl.accent;
   ctx.lineWidth = 2.5;
@@ -132,46 +124,114 @@ function drawCover(
   ctx.lineTo(220, divY);
   ctx.stroke();
 
-  // ── SUBTITLE ──
   if (subtitle) {
     ctx.font = `italic 19px Arial, Helvetica, sans-serif`;
     ctx.fillStyle = "rgba(255,255,255,0.58)";
     ctx.fillText(subtitle.substring(0, 50), 62, divY + 38);
   }
 
-  // ── Bottom strip ──
   const stripGrad = ctx.createLinearGradient(0, H - 110, 0, H - 7);
   stripGrad.addColorStop(0, "rgba(0,0,0,0)");
   stripGrad.addColorStop(1, "rgba(0,0,0,0.55)");
   ctx.fillStyle = stripGrad;
   ctx.fillRect(0, H - 110, W, 103);
 
-  // Author at bottom
   ctx.font = "bold 18px Arial, Helvetica, sans-serif";
   ctx.fillStyle = "rgba(255,255,255,0.85)";
   ctx.textAlign = "center";
   ctx.fillText(author || "Auteur", W / 2, H - 48);
-
   ctx.font = "12px Arial, Helvetica, sans-serif";
   ctx.fillStyle = "rgba(255,255,255,0.22)";
   ctx.fillText("BookAutomator", W / 2, H - 22);
 }
 
+function drawAiOverlay(
+  canvas: HTMLCanvasElement,
+  img: HTMLImageElement,
+  title: string,
+  author: string
+) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  canvas.width = W;
+  canvas.height = H;
+  ctx.drawImage(img, 0, 0, W, H);
+
+  // Bottom gradient overlay for text readability
+  const grad = ctx.createLinearGradient(0, H * 0.55, 0, H);
+  grad.addColorStop(0, "rgba(0,0,0,0)");
+  grad.addColorStop(1, "rgba(0,0,0,0.88)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Top author band
+  const topGrad = ctx.createLinearGradient(0, 0, 0, 80);
+  topGrad.addColorStop(0, "rgba(0,0,0,0.65)");
+  topGrad.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = topGrad;
+  ctx.fillRect(0, 0, W, 80);
+
+  // Accent bar top
+  ctx.fillStyle = "rgba(232,121,249,0.9)";
+  ctx.fillRect(0, 0, W, 5);
+
+  // Author top
+  if (author) {
+    ctx.font = "bold 18px Arial, Helvetica, sans-serif";
+    ctx.fillStyle = "rgba(232,121,249,0.95)";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(author.toUpperCase(), 40, 44);
+  }
+
+  // Title — large, bottom area
+  const titleText = title || "Titre du Livre";
+  const maxTitleW = W - 80;
+  let fs = 58;
+  ctx.font = `bold ${fs}px Arial, Helvetica, sans-serif`;
+  while (ctx.measureText(titleText).width > maxTitleW * 2.2 && fs > 24) {
+    fs -= 3;
+    ctx.font = `bold ${fs}px Arial, Helvetica, sans-serif`;
+  }
+  const tLines = wrapText(ctx, titleText, maxTitleW);
+  const lh = fs * 1.25;
+  const totalH = tLines.length * lh;
+  let ty = H - 80 - totalH;
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "left";
+  tLines.forEach(l => {
+    ctx.fillText(l, 40, ty);
+    ty += lh;
+  });
+
+  // Author bottom
+  ctx.font = "16px Arial, Helvetica, sans-serif";
+  ctx.fillStyle = "rgba(255,255,255,0.65)";
+  ctx.fillText(author || "", 40, H - 42);
+
+  // Bottom accent bar
+  ctx.fillStyle = "rgba(232,121,249,0.8)";
+  ctx.fillRect(0, H - 5, W, 5);
+}
+
 export default function CoverPage() {
-  const [tab, setTab] = useState<"canvas" | "ai">("canvas");
-  const [title, setTitle] = useState("");
-  const [author, setAuthor] = useState("");
+  const [tab, setTab]         = useState<"canvas" | "ai">("canvas");
+  const [title, setTitle]     = useState("");
+  const [author, setAuthor]   = useState("");
   const [subtitle, setSubtitle] = useState("");
-  const [tpl, setTpl] = useState(TEMPLATES[0]);
-  const [deco, setDeco] = useState<typeof DECOS[number]>("cercles");
-  const [aiPrompt, setAiPrompt] = useState("");
-  const [aiUrl, setAiUrl] = useState("");
+  const [tpl, setTpl]         = useState(TEMPLATES[0]);
+  const [deco, setDeco]       = useState<typeof DECOS[number]>("cercles");
+  const [aiPrompt, setAiPrompt]   = useState("");
+  const [aiUrl, setAiUrl]         = useState("");
   const [aiLoading, setAiLoading] = useState(false);
-  const [books, setBooks] = useState<Book[]>([]);
+  const [aiReady, setAiReady]     = useState(false);
+  const [aiModel, setAiModel]     = useState("flux");
+  const [books, setBooks]         = useState<Book[]>([]);
   const [assignTarget, setAssignTarget] = useState("");
-  const [assigned, setAssigned] = useState(false);
-  const [show3D, setShow3D] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [assigned, setAssigned]   = useState(false);
+  const [show3D, setShow3D]       = useState(false);
+  const canvasRef   = useRef<HTMLCanvasElement>(null);
+  const aiCanvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => { setBooks(getBooks()); }, []);
 
@@ -181,6 +241,15 @@ export default function CoverPage() {
 
   useEffect(() => { redraw(); }, [redraw]);
 
+  // Redraw AI canvas overlay when title/author changes after image loaded
+  useEffect(() => {
+    if (!aiReady || !aiUrl || !aiCanvasRef.current) return;
+    const img = new window.Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => { if (aiCanvasRef.current) drawAiOverlay(aiCanvasRef.current, img, title, author); };
+    img.src = aiUrl;
+  }, [title, author, aiReady, aiUrl]);
+
   const downloadCanvas = () => {
     if (!canvasRef.current) return;
     const a = document.createElement("a");
@@ -189,9 +258,18 @@ export default function CoverPage() {
     a.click();
   };
 
-  const assignCoverToBook = () => {
-    if (!assignTarget || !canvasRef.current) return;
-    const dataUrl = canvasRef.current.toDataURL("image/png");
+  const downloadAiCanvas = () => {
+    if (!aiCanvasRef.current) return;
+    const a = document.createElement("a");
+    a.download = `couverture-ia-${title || "livre"}.png`;
+    a.href = aiCanvasRef.current.toDataURL("image/png");
+    a.click();
+  };
+
+  const assignCoverToBook = (fromCanvas: "canvas" | "ai") => {
+    const ref = fromCanvas === "ai" ? aiCanvasRef.current : canvasRef.current;
+    if (!assignTarget || !ref) return;
+    const dataUrl = ref.toDataURL("image/png");
     const book = books.find(b => b.id === assignTarget);
     if (!book) return;
     saveBook({ ...book, hasCover: true, coverDataUrl: dataUrl, updatedAt: new Date().toISOString() });
@@ -203,16 +281,46 @@ export default function CoverPage() {
   const generateAI = () => {
     if (!aiPrompt && !title) return;
     setAiLoading(true);
+    setAiReady(false);
     setAiUrl("");
     const seed = Math.floor(Math.random() * 99999);
     const prompt = encodeURIComponent(
-      `Professional book cover illustration. ${aiPrompt || `Book titled "${title}"`}. ${author ? `Author ${author}.` : ""}
-       Cinematic lighting, dramatic atmosphere, portrait 3:4 format, bestseller quality, ultra HD. No text, no letters.`
+      `Professional book cover illustration, no text, no letters, no words. ${aiPrompt || `Theme: "${title}"`}. Cinematic lighting, dramatic atmosphere, portrait 3:4 format, bestseller quality, ultra HD photorealistic.`
     );
-    setAiUrl(`https://image.pollinations.ai/prompt/${prompt}?width=512&height=768&seed=${seed}&nologo=true&enhance=true`);
+    const url = `https://image.pollinations.ai/prompt/${prompt}?width=512&height=768&seed=${seed}&model=${aiModel}&nologo=true&enhance=true`;
+    setAiUrl(url);
+  };
+
+  const handleAiLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    if (aiCanvasRef.current) {
+      drawAiOverlay(aiCanvasRef.current, img, title, author);
+    }
+    setAiLoading(false);
+    setAiReady(true);
   };
 
   const ic = "w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 text-sm focus:outline-none focus:border-purple-500/50";
+
+  const AssignSection = ({ from }: { from: "canvas" | "ai" }) => (
+    books.length > 0 ? (
+      <div className="pt-3 border-t border-white/5">
+        <label className="text-white/60 text-sm mb-2 flex items-center gap-1"><BookOpen size={13} /> Assigner à un livre</label>
+        <div className="flex gap-2">
+          <select value={assignTarget} onChange={e => setAssignTarget(e.target.value)}
+            className="flex-1 bg-[#111] border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none">
+            <option value="">Choisir un livre...</option>
+            {books.map(b => <option key={b.id} value={b.id}>{b.title}</option>)}
+          </select>
+          <button onClick={() => assignCoverToBook(from)} disabled={!assignTarget || (from === "ai" && !aiReady)}
+            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-40 ${assigned ? "bg-emerald-500 text-white" : "bg-purple-500 hover:bg-purple-600 text-white"}`}>
+            {assigned ? <><Check size={14} /> Assignée</> : "Assigner"}
+          </button>
+        </div>
+        {assigned && <p className="text-emerald-400 text-xs mt-1.5">✓ Couverture sauvegardée dans la bibliothèque</p>}
+      </div>
+    ) : null
+  );
 
   return (
     <div className="p-8 min-h-screen">
@@ -222,7 +330,7 @@ export default function CoverPage() {
       </div>
 
       <div className="flex gap-2 mb-8 p-1 bg-white/[0.03] border border-white/[0.06] rounded-xl w-fit">
-        {[{ id: "canvas", icon: Layout, label: "Couverture Instantanée" }, { id: "ai", icon: Wand2, label: "Génération IA (lente)" }].map(({ id, icon: Icon, label }) => (
+        {[{ id: "canvas", icon: Layout, label: "Couverture Instantanée" }, { id: "ai", icon: Wand2, label: "Génération IA" }].map(({ id, icon: Icon, label }) => (
           <button key={id} onClick={() => setTab(id as "canvas" | "ai")}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === id ? "bg-purple-500 text-white" : "text-white/50 hover:text-white"}`}>
             <Icon size={15} />{label}
@@ -230,9 +338,9 @@ export default function CoverPage() {
         ))}
       </div>
 
+      {/* ── CANVAS TAB ─────────────────────────────────────────────── */}
       {tab === "canvas" && (
         <div className="grid grid-cols-2 gap-8">
-          {/* Controls */}
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 space-y-5">
             <div>
               <label className="text-white/60 text-sm mb-2 block">Titre du livre</label>
@@ -253,7 +361,7 @@ export default function CoverPage() {
                 {TEMPLATES.map(t => (
                   <button key={t.id} onClick={() => setTpl(t)}
                     className={`rounded-xl p-1.5 border transition-all ${tpl.id === t.id ? "border-purple-500/70 scale-105" : "border-white/[0.06]"}`}>
-                    <div className="h-10 rounded-lg mb-1 flex items-end justify-center pb-1"
+                    <div className="h-10 rounded-lg mb-1"
                       style={{ background: `linear-gradient(160deg, ${t.c1}, ${t.c2})`, borderBottom: `3px solid ${t.accent}` }} />
                     <p className="text-white/50 text-xs text-center leading-none">{t.name}</p>
                   </button>
@@ -273,24 +381,7 @@ export default function CoverPage() {
               </div>
             </div>
 
-            {/* Assign to book */}
-            {books.length > 0 && (
-              <div className="pt-3 border-t border-white/5">
-                <label className="text-white/60 text-sm mb-2 flex items-center gap-1"><BookOpen size={13} /> Assigner à un livre</label>
-                <div className="flex gap-2">
-                  <select value={assignTarget} onChange={e => setAssignTarget(e.target.value)}
-                    className="flex-1 bg-[#111] border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none">
-                    <option value="">Choisir un livre...</option>
-                    {books.map(b => <option key={b.id} value={b.id}>{b.title}</option>)}
-                  </select>
-                  <button onClick={assignCoverToBook} disabled={!assignTarget}
-                    className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-40 ${assigned ? "bg-emerald-500 text-white" : "bg-purple-500 hover:bg-purple-600 text-white"}`}>
-                    {assigned ? <><Check size={14} /> Assignée</> : "Assigner"}
-                  </button>
-                </div>
-                {assigned && <p className="text-emerald-400 text-xs mt-1.5">✓ Couverture sauvegardée dans la bibliothèque</p>}
-              </div>
-            )}
+            <AssignSection from="canvas" />
 
             <button onClick={downloadCanvas}
               className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-xl font-medium transition-all">
@@ -298,7 +389,6 @@ export default function CoverPage() {
             </button>
           </div>
 
-          {/* Canvas Preview */}
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 flex flex-col items-center justify-center">
             <div className="flex items-center justify-between mb-5 w-full max-w-xs">
               <div className="flex items-center gap-2">
@@ -336,11 +426,17 @@ export default function CoverPage() {
         </div>
       )}
 
+      {/* ── AI TAB ─────────────────────────────────────────────────── */}
       {tab === "ai" && (
         <div className="grid grid-cols-2 gap-8">
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 space-y-5">
-            <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
-              <p className="text-yellow-300 text-sm">⚠️ Génération IA via Pollinations.ai — peut prendre 2-10 minutes. Utilise l&apos;onglet <strong>Instantané</strong> pour une couverture immédiate.</p>
+            <div>
+              <label className="text-white/60 text-sm mb-2 block">Titre du livre <span className="text-white/30">(affiché sur la couverture)</span></label>
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Mon Livre" className={ic} />
+            </div>
+            <div>
+              <label className="text-white/60 text-sm mb-2 block">Auteur <span className="text-white/30">(affiché sur la couverture)</span></label>
+              <input value={author} onChange={e => setAuthor(e.target.value)} placeholder="Ton nom" className={ic} />
             </div>
             <div>
               <label className="text-white/60 text-sm mb-2 block">Description visuelle</label>
@@ -348,23 +444,43 @@ export default function CoverPage() {
                 placeholder="Ex: Fond sombre premium, ville futuriste la nuit, tons violets et dorés, style luxe..."
                 className={`${ic} resize-none`} />
             </div>
+
             <div>
-              <label className="text-white/60 text-sm mb-2 block">Titre (contexte IA)</label>
-              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Mon Livre" className={ic} />
+              <label className="text-white/60 text-sm mb-2 block">Modèle IA</label>
+              <div className="grid grid-cols-2 gap-2">
+                {AI_MODELS.map(m => (
+                  <button key={m.id} onClick={() => setAiModel(m.id)}
+                    className={`px-3 py-2 rounded-xl text-xs font-medium transition-all border ${aiModel === m.id ? "bg-purple-500/30 border-purple-500/50 text-purple-200" : "bg-white/[0.03] border-white/[0.06] text-white/40 hover:text-white"}`}>
+                    {m.label}
+                  </button>
+                ))}
+              </div>
             </div>
+
             <button onClick={generateAI} disabled={aiLoading || (!aiPrompt && !title)}
               className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 text-white rounded-xl font-medium transition-all">
               {aiLoading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Wand2 size={16} />}
-              {aiLoading ? "Génération en cours..." : "Générer avec Pollinations.ai"}
+              {aiLoading ? "Génération en cours..." : "Générer la couverture"}
             </button>
+
+            {aiReady && (
+              <>
+                <AssignSection from="ai" />
+                <button onClick={downloadAiCanvas}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-500/20 border border-emerald-500/30 hover:bg-emerald-500/30 text-emerald-300 rounded-xl text-sm font-medium transition-all">
+                  <Download size={14} /> Télécharger (avec titre + auteur)
+                </button>
+              </>
+            )}
           </div>
 
+          {/* AI Preview */}
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 flex flex-col items-center justify-center min-h-[500px]">
             {aiLoading && !aiUrl && (
               <div className="text-center">
                 <div className="w-16 h-16 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                 <p className="text-white font-medium">Génération en cours...</p>
-                <p className="text-white/40 text-sm mt-1">Patience, peut prendre plusieurs minutes</p>
+                <p className="text-white/40 text-sm mt-1">Patience, peut prendre 1-5 minutes selon le modèle</p>
               </div>
             )}
             {!aiLoading && !aiUrl && (
@@ -373,27 +489,34 @@ export default function CoverPage() {
                   <Wand2 size={32} className="text-white/20" />
                 </div>
                 <p className="text-white/30 text-sm">La couverture IA apparaîtra ici</p>
+                <p className="text-white/20 text-xs mt-2">Le titre et l&apos;auteur seront ajoutés automatiquement</p>
               </div>
             )}
+
+            {/* Hidden img tag to trigger load — canvas shows the result */}
             {aiUrl && (
-              <div className="text-center">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={aiUrl} alt="Couverture IA"
-                  onLoad={() => setAiLoading(false)}
-                  onError={() => setAiLoading(false)}
-                  className="w-48 h-auto rounded-lg shadow-2xl shadow-purple-500/30 mb-4 mx-auto" />
-                {!aiLoading && (
-                  <div className="flex gap-3 justify-center">
-                    <button onClick={generateAI} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-white/70 rounded-xl text-sm">
-                      <RefreshCw size={13} /> Regénérer
-                    </button>
-                    <a href={aiUrl} download="couverture-ia.png" target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-medium">
-                      <Download size={13} /> Télécharger
-                    </a>
-                  </div>
-                )}
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={aiUrl} alt="" onLoad={handleAiLoad} onError={() => setAiLoading(false)}
+                className="hidden" crossOrigin="anonymous" />
+            )}
+
+            {/* AI canvas with overlay */}
+            <canvas ref={aiCanvasRef}
+              style={{ width: 224, height: 336, borderRadius: "12px", display: aiReady ? "block" : "none" }}
+              className="shadow-2xl shadow-purple-500/30 border border-white/10 mb-4" />
+
+            {aiLoading && aiUrl && (
+              <div className="text-center mt-4">
+                <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                <p className="text-white/40 text-sm">Chargement de l&apos;image...</p>
               </div>
+            )}
+
+            {aiReady && (
+              <button onClick={generateAI}
+                className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-white/60 rounded-xl text-sm mt-2">
+                <RefreshCw size={13} /> Regénérer
+              </button>
             )}
           </div>
         </div>
