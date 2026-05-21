@@ -16,6 +16,7 @@ export default function AvatarPage() {
   const [targetDesc, setTargetDesc] = useState("");
   const [loading, setLoading] = useState(false);
   const [avatar, setAvatar] = useState<Avatar | null>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => { setBooks(getBooks()); }, []);
 
@@ -24,6 +25,8 @@ export default function AvatarPage() {
   const generate = async () => {
     if (!book) return;
     setLoading(true);
+    setError("");
+    setAvatar(null);
     try {
       const res = await fetch("/api/write", {
         method: "POST",
@@ -36,8 +39,16 @@ export default function AvatarPage() {
         }),
       });
       const data = await res.json();
-      if (data.prenom) setAvatar(data as Avatar);
-    } catch { }
+      if (data.prenom) {
+        setAvatar(data as Avatar);
+      } else if (data._error) {
+        setError("L'IA n'a pas pu générer le JSON. Réessaie — cela arrive parfois.");
+      } else {
+        setError("Réponse inattendue. Réessaie.");
+      }
+    } catch {
+      setError("Erreur réseau. Vérifie ta connexion et réessaie.");
+    }
     setLoading(false);
   };
 
@@ -76,8 +87,13 @@ export default function AvatarPage() {
             <button onClick={generate} disabled={loading || !book}
               className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-violet-500 to-purple-500 hover:from-violet-600 hover:to-purple-600 disabled:opacity-40 text-white rounded-xl font-medium transition-all">
               {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-              {loading ? "Création..." : "Créer l'avatar"}
+              {loading ? "Création de l'avatar..." : "Créer l'avatar"}
             </button>
+            {error && (
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
+                <p className="text-red-400 text-xs">{error}</p>
+              </div>
+            )}
           </div>
         </div>
 
