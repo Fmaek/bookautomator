@@ -188,21 +188,32 @@ Construis vers un moment de vÃ©ritÃ©, une prise de conscience intense.
 600 Ã  800 mots, langue tendue, rythme haletant, prose dramatique continue.`,
       };
 
-      const chapterPrompt = stylePrompts[style] || `Ã‰cris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}".
-Commence par une accroche forte qui capture l'attention immÃ©diatement.
-DÃ©veloppe avec profondeur, des exemples concrets et une progression naturelle.
-Termine par une phrase mÃ©morable qui donne envie de lire la suite.
-600 Ã  800 mots, prose fluide et engageante.`;
+            // Contexte du livre injecté dans chaque chapitre pour préserver les thèmes
+      const { description, themes, savedStyleDescription } = body;
+      const themeContext = [
+        description ? `DESCRIPTION DU LIVRE: ${description}` : "",
+        themes      ? `THÈMES PRINCIPAUX À RESPECTER: ${themes}` : "",
+        savedStyleDescription ? `STYLE PERSONNEL DE L'AUTEUR (reproduire fidèlement):\n${savedStyleDescription}` : "",
+      ].filter(Boolean).join("\n");
 
       const noMarkdownReminder = `
 
-RÃˆGLE ABSOLUE: aucun astÃ©risque, aucun diÃ¨se, aucun tiret de liste, aucun sous-titre. Prose continue uniquement, comme dans un livre imprimÃ©.`;
+RÈGLES ABSOLUES — NE JAMAIS ENFREINDRE:
+Aucun astérisque (*gras* ou **titre**). Aucun dièse (# ou ##). Aucun tiret de liste (- item). Aucun sous-titre visible dans le texte. Prose continue uniquement, paragraphes naturels, exactement comme un livre publié chez un grand éditeur.`;
+
+      const basePrompt = stylePrompts[style] || `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}".
+Commence par une accroche forte qui capture l'attention immédiatement.
+Développe avec profondeur, des exemples concrets et une progression naturelle.
+Termine par une phrase mémorable qui donne envie de lire la suite.
+600 à 800 mots, prose fluide et engageante.`;
+
+      const chapterPrompt = basePrompt + (themeContext ? `\n\n${themeContext}` : "") + noMarkdownReminder;
 
       const completion = await groq.chat.completions.create({
         model: MODEL,
         messages: [
           { role: "system", content: SYSTEM_AUTHOR },
-          { role: "user", content: chapterPrompt + noMarkdownReminder },
+          { role: "user", content: chapterPrompt },
         ],
         temperature: 0.88, max_tokens: 2048,
       });
@@ -1191,45 +1202,54 @@ Chapitres: ${chapterList}
     // â”€â”€ READER AVATAR BUILDER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (action === "reader_avatar") {
       const { bookTitle, category, targetDescription } = body;
+      // Use random seed in prompt to guarantee variety between calls
+      const seeds = ["Persona A: jeune actif urbain", "Persona B: parent établi", "Persona C: senior cultivé"];
+      const randomSeed = seeds[Math.floor(Math.random() * seeds.length)];
+
       const completion = await groq.chat.completions.create({
         model: MODEL,
         messages: [
-          { role: "system", content: "Tu es expert en marketing et crÃ©ation de personas acheteurs. Tu rÃ©ponds UNIQUEMENT avec un objet JSON valide, sans aucun texte avant ou aprÃ¨s, sans bloc de code markdown." },
-          { role: "user", content: `GÃ©nÃ¨re l'avatar du lecteur idÃ©al pour le livre "${bookTitle}" (${category}).
-Cible prÃ©cisÃ©e: ${targetDescription || "non spÃ©cifiÃ©e"}
+          { role: "system", content: "Tu es expert en marketing et segmentation d'audience. Tu réponds UNIQUEMENT avec un tableau JSON valide contenant exactement 3 objets, sans aucun texte avant ou après, sans markdown." },
+          { role: "user", content: `Génère 3 SEGMENTS D'AUDIENCE DISTINCTS et DIFFÉRENTS pour le livre "${bookTitle}" (${category}).
+Cible précisée: ${targetDescription || "non spécifiée"}
+Variation créative: ${randomSeed} — assure-toi que les 3 personas sont vraiment différents (âges, professions, situations de vie différents).
 
-RÃ©ponds UNIQUEMENT avec cet objet JSON â€” rien d'autre, pas de texte avant ni aprÃ¨s:
-{
-  "prenom": "prÃ©nom franÃ§ais rÃ©aliste",
-  "age": 34,
-  "profession": "profession dÃ©taillÃ©e",
-  "situation": "description de sa vie actuelle en 2-3 phrases",
-  "probleme_principal": "son problÃ¨me numÃ©ro 1 que ce livre rÃ©sout",
-  "desirs": ["dÃ©sir 1", "dÃ©sir 2", "dÃ©sir 3", "dÃ©sir 4"],
-  "peurs": ["peur 1", "peur 2", "peur 3"],
-  "objections_achat": ["objection 1", "objection 2", "objection 3"],
-  "triggers_dachat": ["dÃ©clencheur 1", "dÃ©clencheur 2", "dÃ©clencheur 3"],
-  "plateformes": ["Instagram", "LinkedIn"],
-  "message_marketing": "la phrase exacte qui le fait acheter immÃ©diatement",
-  "parcours_client": "comment il dÃ©couvre le livre jusqu'Ã  l'achat en 3-4 Ã©tapes"
-}` },
+Réponds UNIQUEMENT avec ce tableau JSON — rien d'autre:
+[
+  {
+    "segment": "Segment 1 — [nom du profil]",
+    "prenom": "prénom réaliste",
+    "age": 28,
+    "profession": "profession détaillée",
+    "situation": "vie actuelle en 2 phrases",
+    "probleme_principal": "problème n°1 que ce livre résout pour CE profil",
+    "desirs": ["désir 1", "désir 2", "désir 3"],
+    "peurs": ["peur 1", "peur 2"],
+    "objections_achat": ["objection 1", "objection 2"],
+    "triggers_dachat": ["déclencheur 1", "déclencheur 2"],
+    "plateformes": ["Instagram", "TikTok"],
+    "message_marketing": "la phrase exacte qui fait acheter CE profil",
+    "parcours_client": "comment il découvre et achète le livre"
+  },
+  { "segment": "Segment 2 — [nom du profil]", "prenom": "...", "age": 42, ... },
+  { "segment": "Segment 3 — [nom du profil]", "prenom": "...", "age": 58, ... }
+]` },
         ],
-        temperature: 0.75, max_tokens: 1800,
+        temperature: 0.95,
+        max_tokens: 3000,
       });
-      const raw = completion.choices[0].message.content?.trim() || "{}";
+      const raw = completion.choices[0].message.content?.trim() || "[]";
       try {
         const jsonStr = extractJson(raw);
         const parsed = JSON.parse(jsonStr);
-        // Ensure required fields exist
-        if (!parsed.prenom) throw new Error("missing prenom");
-        return NextResponse.json(parsed);
+        const avatars = Array.isArray(parsed) ? parsed : [parsed];
+        if (avatars.length === 0 || !avatars[0].prenom) throw new Error("invalid");
+        return NextResponse.json({ avatars });
       } catch {
-        // Last resort: return a structured error the UI can detect
-        return NextResponse.json({ _error: "parse_failed", raw: raw.substring(0, 200) }, { status: 422 });
+        return NextResponse.json({ _error: "parse_failed", raw: raw.substring(0, 300) }, { status: 422 });
       }
     }
 
-    // â”€â”€ VIRAL HOOKS LAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (action === "viral_hooks") {
       const { bookTitle, category, promise } = body;
       const completion = await groq.chat.completions.create({
