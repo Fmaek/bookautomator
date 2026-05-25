@@ -34,8 +34,11 @@ function cleanText(text: string): string {
 /** Extrait le premier objet JSON valide d'une chaÃ®ne */
 function extractJson(raw: string): string {
   const clean = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-  const match = clean.match(/\{[\s\S]*\}/);
-  return match ? match[0] : "{}";
+  // Try array first, then object
+  const arrMatch = clean.match(/\[[\s\S]*\]/);
+  if (arrMatch) return arrMatch[0];
+  const objMatch = clean.match(/\{[\s\S]*\}/);
+  return objMatch ? objMatch[0] : "{}";
 }
 
 export async function POST(req: NextRequest) {
