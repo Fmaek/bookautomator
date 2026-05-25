@@ -2,6 +2,8 @@ export interface Book {
   id: string;
   title: string;
   category: string;
+  description?: string;
+  themes?: string;
   status: "brouillon" | "prêt" | "publié";
   pages: number;
   hasCover: boolean;
@@ -13,6 +15,8 @@ export interface Book {
   authorName?: string;
   language?: string;
   wordCountTarget?: number;
+  targetAudience?: string;
+  price?: number;
   salesData?: { date: string; units: number; revenue: number }[];
   createdAt: string;
   updatedAt: string;

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, BookOpen, Image, CheckSquare, Send, Library, Zap,
-  Megaphone, Radio, Calendar, DollarSign, Package, Globe, Ghost,
+  Megaphone, Video, Calendar, DollarSign, Package, Globe, Ghost,
   Fingerprint, Search, Headphones, Languages, GraduationCap, UserCircle,
   Workflow, Palette, BarChart3, Drama, Network, TrendingUp,
   Activity, BookMarked, Menu, X, Lightbulb, LibraryBig
@@ -76,7 +76,7 @@ const SECTIONS = [
     label: "Outils",
     items: [
       { href: "/avatar",   icon: UserCircle,  label: "Reader Avatar" },
-      { href: "/autopost", icon: Radio,       label: "Post Automatique" },
+      { href: "/autopost", icon: Video,        label: "Studio Social 🎬" },
       { href: "/library",  icon: Library,     label: "Ma Bibliothèque" },
       { href: "/",         icon: LayoutDashboard, label: "Dashboard" },
     ],

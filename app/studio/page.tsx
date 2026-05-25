@@ -1,14 +1,15 @@
 ﻿"use client";
-import React, { useState, useRef, Suspense, useCallback } from "react";
+import React, { useState, useRef, Suspense, useCallback, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   BookOpen, Zap, Edit3, Layers, Play, Copy, FileText,
   ChevronRight, Loader2, CheckCircle, Plus, Trash2, Save,
   ArrowLeft, Sparkles, FileDown, AlignLeft, RefreshCw, Mic, X,
   History, Globe, MessageSquare, ArrowUp, ArrowDown, Target,
-  BarChart3, AlertTriangle, Repeat2, Send, Newspaper
+  BarChart3, AlertTriangle, Repeat2, Send, Newspaper, Fingerprint
 } from "lucide-react";
 import { saveBook, newBook, getBook, saveChapterVersion, getChapterVersions, type Book, type ChapterVersion } from "@/lib/books";
+import { getSavedStyles, type SavedStyle } from "@/lib/styles";
 
 type Mode = "auto" | "assisted" | "hybrid";
 
@@ -167,7 +168,14 @@ function StudioContent() {
   const [newsletterIdx, setNewsletterIdx] = useState<number | null>(null);
   const [newsletterContent, setNewsletterContent] = useState("");
   const [newsletterLoading, setNewsletterLoading] = useState(false);
+  // Saved styles integration
+  const [savedStyles, setSavedStyles] = useState<SavedStyle[]>([]);
+  const [selectedStyleId, setSelectedStyleId] = useState<string>("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => { setSavedStyles(getSavedStyles()); }, []);
+
+  const selectedStyleDescription = savedStyles.find(s => s.id === selectedStyleId)?.styleDescription || "";
 
   const isPoem = category.includes("Poési");
   const isKids = category.includes("enfant") || category.includes("coloriage");
@@ -209,7 +217,7 @@ function StudioContent() {
         const res = await fetch("/api/write", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "chapter", title, chapterTitle: chapters[i].title, chapterIndex: i + 1, totalChapters: chapters.length, category, style: writingStyle }),
+          body: JSON.stringify({ action: "chapter", title, chapterTitle: chapters[i].title, chapterIndex: i + 1, totalChapters: chapters.length, category, style: writingStyle, description: bookDescription, themes: bookDescription, savedStyleDescription: selectedStyleDescription }),
         });
         const data = await res.json();
         updated[i] = { ...updated[i], content: data.content || "", status: "done" };
@@ -263,7 +271,7 @@ function StudioContent() {
       const res = await fetch("/api/write", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "regenerate", title, chapterTitle: chapters[idx].title, chapterIndex: idx + 1, totalChapters: chapters.length, category, style: writingStyle }),
+        body: JSON.stringify({ action: "regenerate", title, chapterTitle: chapters[idx].title, chapterIndex: idx + 1, totalChapters: chapters.length, category, style: writingStyle, description: bookDescription, themes: bookDescription, savedStyleDescription: selectedStyleDescription }),
       });
       const data = await res.json();
       setChapters(prev => prev.map((c, i) => i === idx ? { ...c, content: data.content || c.content, status: "done" as const } : c));
@@ -738,12 +746,29 @@ function StudioContent() {
                 <label className="text-white/60 text-sm mb-2 block">Style d&apos;écriture</label>
                 <div className="flex flex-wrap gap-2">
                   {["Motivant", "Storytelling", "Académique", "Humoristique", "Dramatique"].map(s => (
-                    <button key={s} onClick={() => setWritingStyle(s)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${writingStyle === s ? "bg-purple-500 text-white" : "bg-white/5 text-white/50 hover:text-white"}`}>
+                    <button key={s} onClick={() => { setWritingStyle(s); setSelectedStyleId(""); }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${writingStyle === s && !selectedStyleId ? "bg-purple-500 text-white" : "bg-white/5 text-white/50 hover:text-white"}`}>
                       {s}
                     </button>
                   ))}
                 </div>
+                {savedStyles.length > 0 && (
+                  <div className="mt-3">
+                    <label className="text-white/40 text-xs mb-1.5 flex items-center gap-1.5 block">
+                      <Fingerprint size={11} className="text-pink-400" /> Mon style cloné (Tone Cloner)
+                    </label>
+                    <select value={selectedStyleId} onChange={e => setSelectedStyleId(e.target.value)}
+                      className="w-full bg-[#111] border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none">
+                      <option value="">— Sans style personnel —</option>
+                      {savedStyles.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                    {selectedStyleId && (
+                      <p className="text-pink-400/70 text-xs mt-1.5 flex items-center gap-1">
+                        <Fingerprint size={10} /> Style cloné appliqué à tous les chapitres
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
