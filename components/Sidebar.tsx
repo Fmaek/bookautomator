@@ -7,7 +7,7 @@ import {
   Megaphone, Radio, Calendar, DollarSign, Package, Globe, Ghost,
   Fingerprint, Search, Headphones, Languages, GraduationCap, UserCircle,
   Workflow, Palette, BarChart3, Drama, Network, TrendingUp,
-  Activity, BookMarked, Menu, X, Lightbulb
+  Activity, BookMarked, Menu, X, Lightbulb, LibraryBig
 } from "lucide-react";
 
 const SECTIONS = [
@@ -54,6 +54,7 @@ const SECTIONS = [
     items: [
       { href: "/trends",   icon: TrendingUp,   label: "Tendances Meta" },
       { href: "/research", icon: Search,       label: "Research Hub" },
+      { href: "/discover", icon: LibraryBig,   label: "Bibliothèque Mondiale" },
     ],
   },
   {
