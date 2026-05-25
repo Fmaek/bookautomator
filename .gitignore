@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Python social server — runtime files (credentials & session cookies)
+sessions/
+covers/
+queue.json
+__pycache__/
+*.pyc
