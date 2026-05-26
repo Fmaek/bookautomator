@@ -1,4 +1,4 @@
-"""
+﻿"""
 BookAutomator — Serveur de publication automatique
 Lance: python social_server.py
 Puis ouvre l'app et configure les identifiants dans Studio Social > Comptes
@@ -412,4 +412,4 @@ if __name__ == "__main__":
     print("═"*55 + "\n")
 
     threading.Thread(target=run_scheduler, daemon=True).start()
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)

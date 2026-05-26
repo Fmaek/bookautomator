@@ -55,7 +55,7 @@ const PLATFORMS: { id: Platform; label: string; color: string; bg: string }[] = 
   { id: "facebook",  label: "Facebook",  color: "text-blue-400",  bg: "bg-blue-500/20 border-blue-500/30" },
 ];
 
-const SERVER = "http://localhost:8000";
+const SERVER = "http://localhost:8001";
 
 // ── Video renderer ─────────────────────────────────────────────────────────────
 function easeOut(t: number) { return 1 - Math.pow(1 - t, 3); }
