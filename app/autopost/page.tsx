@@ -57,53 +57,290 @@ const PLATFORMS: { id: Platform; label: string; color: string; bg: string }[] = 
 
 const SERVER = "http://localhost:8001";
 
-// ── Video renderer ─────────────────────────────────────────────────────────────
+// ── Video renderer — cinématique avec son ambiant ─────────────────────────────
 function easeOut(t: number) { return 1 - Math.pow(1 - t, 3); }
+function easeInOut(t: number) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
   const words = text.split(" "); const lines: string[] = []; let cur = "";
   for (const w of words) { const t2 = cur ? cur + " " + w : w; if (ctx.measureText(t2).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t2; }
   if (cur) lines.push(cur); return lines;
 }
 interface Slide { text: string; subtext?: string; duration: number; style: string }
-async function renderVideoToBlob(slides: Slide[], fmt: typeof FORMATS[0], thm: typeof THEMES[0], coverDataUrl?: string, fps = 25): Promise<Blob> {
-  const canvas = document.createElement("canvas"); canvas.width = fmt.w; canvas.height = fmt.h;
-  const ctx = canvas.getContext("2d")!;
-  const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm";
-  const rec = new MediaRecorder(canvas.captureStream(fps), { mimeType: mime, videoBitsPerSecond: 2_500_000 });
-  const chunks: Blob[] = []; rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-  let cImg: HTMLImageElement | null = null;
-  if (coverDataUrl) { cImg = await new Promise(r => { const i = new window.Image(); i.onload = () => r(i); i.onerror = () => r(null as unknown as HTMLImageElement); i.src = coverDataUrl; }); }
-  rec.start();
+
+// ── Web Audio : son ambiant cinématique ───────────────────────────────────────
+function buildCinematicAudio(
+  audioCtx: AudioContext, dest: MediaStreamAudioDestinationNode,
+  themeId: string, videoType: string, totalSec: number
+) {
+  const BASE: Record<string, number> = { dark:55, gold:82, ocean:65, fire:74, forest:49, rose:73 };
+  const freq = BASE[themeId] ?? 55;
+  const now = audioCtx.currentTime;
+
+  // Master avec fade in/out
+  const master = audioCtx.createGain();
+  master.gain.setValueAtTime(0, now);
+  master.gain.linearRampToValueAtTime(0.38, now + 2.5);
+  master.gain.setValueAtTime(0.38, now + Math.max(0, totalSec - 2.5));
+  master.gain.linearRampToValueAtTime(0, now + totalSec);
+  master.connect(dest);
+
+  // Réverbe synthétique
+  const revBuf = audioCtx.createBuffer(2, audioCtx.sampleRate * 2.5, audioCtx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = revBuf.getChannelData(ch);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/d.length, 1.8);
+  }
+  const reverb = audioCtx.createConvolver(); reverb.buffer = revBuf;
+  const revGain = audioCtx.createGain(); revGain.gain.setValueAtTime(0.5, now);
+  reverb.connect(revGain); revGain.connect(master);
+
+  // Filtre passe-bas global (chaleur)
+  const warmth = audioCtx.createBiquadFilter();
+  warmth.type = "lowpass"; warmth.frequency.setValueAtTime(1800, now); warmth.Q.setValueAtTime(0.7, now);
+  warmth.connect(master); warmth.connect(reverb);
+
+  // Drones harmoniques (fondamentale + harmoniques)
+  ([
+    [freq,      0.55, "sine",     0.08],
+    [freq*2,    0.22, "sine",     0.12],
+    [freq*3,    0.09, "triangle", 0.18],
+    [freq*0.5,  0.18, "sine",     0.05],
+  ] as [number,number,OscillatorType,number][]).forEach(([f, g, type, lfoRate]) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type; osc.frequency.setValueAtTime(f, now);
+    osc.detune.setValueAtTime((Math.random()-0.5)*12, now);
+    // LFO pour mouvement vivant
+    const lfo = audioCtx.createOscillator(); const lfoG = audioCtx.createGain();
+    lfo.frequency.setValueAtTime(lfoRate, now); lfoG.gain.setValueAtTime(5, now);
+    lfo.connect(lfoG); lfoG.connect(osc.frequency);
+    lfo.start(now); lfo.stop(now + totalSec);
+    gain.gain.setValueAtTime(g, now);
+    osc.connect(gain); gain.connect(warmth);
+    osc.start(now); osc.stop(now + totalSec);
+  });
+
+  // Pulse rythmique (promo / shorts / teaser)
+  if (["promo","shorts","teaser"].includes(videoType)) {
+    const bpm = videoType === "shorts" ? 120 : 95;
+    const beat = 60 / bpm;
+    const beats = Math.floor(totalSec / beat);
+    for (let i = 0; i < beats; i++) {
+      const t = now + i * beat;
+      const o = audioCtx.createOscillator(); const g2 = audioCtx.createGain();
+      o.type = "sine"; o.frequency.setValueAtTime(freq * 4, t);
+      g2.gain.setValueAtTime(0, t);
+      g2.gain.linearRampToValueAtTime(0.14, t + 0.008);
+      g2.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+      o.connect(g2); g2.connect(master);
+      o.start(t); o.stop(t + 0.25);
+      // sous-beat (2e temps)
+      if (i % 2 === 1) {
+        const o2 = audioCtx.createOscillator(); const g3 = audioCtx.createGain();
+        o2.type = "sine"; o2.frequency.setValueAtTime(freq*2, t);
+        g3.gain.setValueAtTime(0, t); g3.gain.linearRampToValueAtTime(0.07, t+0.008); g3.gain.exponentialRampToValueAtTime(0.001, t+0.12);
+        o2.connect(g3); g3.connect(master); o2.start(t); o2.stop(t+0.2);
+      }
+    }
+  }
+
+  // Shimmer haute fréquence (citation / booktrailer)
+  if (["citation","booktrailer"].includes(videoType)) {
+    const sh = audioCtx.createOscillator(); const shG = audioCtx.createGain();
+    sh.type = "sine"; sh.frequency.setValueAtTime(freq*8, now);
+    shG.gain.setValueAtTime(0.025, now);
+    sh.connect(shG); shG.connect(reverb);
+    sh.start(now); sh.stop(now + totalSec);
+  }
+}
+
+// ── Helpers visuels ───────────────────────────────────────────────────────────
+function drawVignette(ctx: CanvasRenderingContext2D, W: number, H: number) {
+  const vg = ctx.createRadialGradient(W/2, H*0.45, H*0.15, W/2, H*0.45, H*0.88);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.75)");
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+}
+function drawGrain(ctx: CanvasRenderingContext2D, W: number, H: number) {
+  // Grain léger via fillRect aléatoires (plus rapide que getImageData sur gros canvas)
+  ctx.globalAlpha = 0.028;
+  for (let i = 0; i < 320; i++) {
+    const v = Math.random() > 0.5 ? 255 : 0;
+    ctx.fillStyle = `rgb(${v},${v},${v})`;
+    ctx.fillRect(Math.random()*W, Math.random()*H, 1.5, 1.5);
+  }
+  ctx.globalAlpha = 1;
+}
+function drawLetterbox(ctx: CanvasRenderingContext2D, W: number, H: number, barH: number) {
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, barH); ctx.fillRect(0, H-barH, W, barH);
+}
+function drawAccentLine(ctx: CanvasRenderingContext2D, W: number, y: number, progress: number, accent: string) {
+  const lw = W * 0.65 * easeOut(Math.min(1, progress * 2.5));
+  ctx.fillStyle = accent; ctx.globalAlpha = 0.8;
+  ctx.fillRect((W-lw)/2, y, lw, 2); ctx.globalAlpha = 1;
+}
+function drawParticles(ctx: CanvasRenderingContext2D, W: number, H: number, accent: string, frame: number) {
+  for (let i = 0; i < 22; i++) {
+    const x = (i*139.7 + frame*0.28) % W;
+    const y = (i*89.3  + frame*0.17) % H;
+    const a = 0.12 + 0.18 * Math.abs(Math.sin(frame*0.04 + i*0.7));
+    const r = 0.8 + (i%3)*0.6;
+    ctx.globalAlpha = a; ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ── Renderer principal ────────────────────────────────────────────────────────
+async function renderVideoToBlob(
+  slides: Slide[], fmt: typeof FORMATS[0], thm: typeof THEMES[0],
+  coverDataUrl?: string, videoType = "teaser", fps = 30
+): Promise<Blob> {
   const W = fmt.w, H = fmt.h;
+  const barH = Math.round(H * 0.075); // letterbox
+  const totalSec = slides.reduce((s, sl) => s + sl.duration, 0);
+
+  const canvas = document.createElement("canvas"); canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d")!;
+
+  // Audio
+  const audioCtx = new AudioContext();
+  const audioDest = audioCtx.createMediaStreamDestination();
+  buildCinematicAudio(audioCtx, audioDest, thm.id, videoType, totalSec);
+
+  // Stream combiné vidéo + audio
+  const mime = ["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"]
+    .find(m => MediaRecorder.isTypeSupported(m)) ?? "video/webm";
+  const combined = new MediaStream([
+    ...canvas.captureStream(fps).getVideoTracks(),
+    ...audioDest.stream.getAudioTracks(),
+  ]);
+  const rec = new MediaRecorder(combined, { mimeType: mime, videoBitsPerSecond: 5_000_000 });
+  const chunks: Blob[] = []; rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+
+  // Chargement couverture
+  let cImg: HTMLImageElement | null = null;
+  if (coverDataUrl) {
+    cImg = await new Promise(r => {
+      const i = new window.Image(); i.onload = () => r(i);
+      i.onerror = () => r(null as unknown as HTMLImageElement); i.src = coverDataUrl;
+    });
+  }
+
+  rec.start();
+  let gFrame = 0;
+  const TRANS = Math.round(fps * 0.45); // frames de transition
+
   for (const sl of slides) {
     const tf = Math.round(sl.duration * fps);
-    for (let f = 0; f < tf; f++) {
-      const p = f / tf, tIn = easeOut(Math.min(1, p * 4)), tOut = p > 0.8 ? easeOut((p - 0.8) * 5) : 0;
-      const alpha = tOut > 0 ? 1 - tOut * 0.6 : tIn, sY = (1 - tIn) * H * 0.04;
-      const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, thm.bg1); g.addColorStop(1, thm.bg2);
-      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-      ctx.fillStyle = thm.accent + "20";
-      for (let i = 0; i < 8; i++) { ctx.beginPath(); ctx.arc(((i * 137 + f * 0.5) % 1) * W, ((i * 97 + f * 0.3) % 1) * H, 2 + i % 3, 0, Math.PI * 2); ctx.fill(); }
-      ctx.fillStyle = thm.accent; ctx.fillRect(W * 0.1 * tIn, 0, W * 0.8 * tIn, 3);
-      if (sl.style === "title" && cImg) { const cW = W * 0.45, cH = cW * 1.5, cX = (W - cW) / 2, cY = H * 0.1 + sY; ctx.shadowColor = thm.accent; ctx.shadowBlur = 24 * tIn; ctx.drawImage(cImg, cX, cY, cW, cH); ctx.shadowBlur = 0; }
-      ctx.globalAlpha = alpha;
-      if (sl.style === "cta") {
-        const pw = W * 0.78, ph = 52, px = (W - pw) / 2, py = H * 0.5 + sY;
-        ctx.fillStyle = thm.accent; ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 26); ctx.fill();
-        ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.round(W * 0.042)}px system-ui`; ctx.textAlign = "center"; ctx.fillText(sl.text, W / 2, py + ph / 2 + 7);
-      } else {
-        const big = ["big","title","climax","intro"].includes(sl.style), fs = big ? W * 0.072 : W * 0.054;
-        ctx.font = `bold ${Math.round(fs)}px system-ui`; ctx.textAlign = "center"; ctx.fillStyle = big ? thm.accent : "#fff";
-        ctx.shadowColor = thm.accent; ctx.shadowBlur = big ? 16 : 0;
-        const lines = wrapText(ctx, sl.text, W * 0.82), lh = fs * 1.32, sy = H / 2 - lines.length * lh / 2 + sY;
-        lines.forEach((l, i) => ctx.fillText(l, W / 2, sy + i * lh)); ctx.shadowBlur = 0;
-        if (sl.subtext) { ctx.font = `${Math.round(W * 0.034)}px system-ui`; ctx.fillStyle = "rgba(255,255,255,0.5)"; wrapText(ctx, sl.subtext, W * 0.78).forEach((l, i) => ctx.fillText(l, W / 2, sy + lines.length * lh + 20 + i * W * 0.04)); }
+    for (let f = 0; f < tf; f++, gFrame++) {
+      const p = f / tf;
+      const fadeIn  = f < TRANS ? easeOut(f / TRANS) : 1;
+      const fadeOut = f > tf - TRANS ? easeOut((tf - f) / TRANS) : 1;
+      const fade = Math.min(fadeIn, fadeOut);
+
+      // ── Fond ──────────────────────────────────────────────────────────────
+      const bg = ctx.createLinearGradient(0, 0, W*0.7, H);
+      bg.addColorStop(0, thm.bg1); bg.addColorStop(1, thm.bg2);
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+      // Lueur centrale (ambiance)
+      const glow = ctx.createRadialGradient(W/2, H*0.4, 0, W/2, H*0.4, W*0.6);
+      glow.addColorStop(0, thm.accent + "1a"); glow.addColorStop(1, "transparent");
+      ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+
+      drawParticles(ctx, W, H, thm.accent, gFrame);
+
+      // ── Couverture avec Ken Burns ─────────────────────────────────────────
+      if (cImg) {
+        const bigStyle = ["title","intro","big","climax"].includes(sl.style);
+        const maxW = bigStyle ? W * 0.50 : W * 0.26;
+        const aspect = cImg.naturalHeight / Math.max(1, cImg.naturalWidth);
+        const cW = maxW, cH = cW * aspect;
+        const cX = bigStyle ? (W - cW) / 2 : W * 0.70;
+        const cY = bigStyle ? H * 0.10 : H * 0.16;
+        // Ken Burns: zoom lent
+        const zoom = 1 + 0.065 * easeInOut(p);
+        const zW = cW*zoom, zH = cH*zoom;
+        ctx.globalAlpha = fade * 0.92;
+        ctx.shadowColor = thm.accent; ctx.shadowBlur = 36 * fade;
+        ctx.drawImage(cImg, cX-(zW-cW)/2, cY-(zH-cH)/2, zW, zH);
+        ctx.shadowBlur = 0; ctx.globalAlpha = 1;
       }
-      ctx.globalAlpha = 1; ctx.fillStyle = thm.accent + "60"; ctx.fillRect(W * 0.1, H - 3, W * 0.8 * tIn, 3);
+
+      // ── Effets post-process ───────────────────────────────────────────────
+      drawGrain(ctx, W, H);
+      drawVignette(ctx, W, H);
+
+      // ── Ligne accent ──────────────────────────────────────────────────────
+      const hasBigCover = cImg && ["title","intro","big"].includes(sl.style);
+      const lineY = hasBigCover ? H * 0.70 : H * 0.09;
+      drawAccentLine(ctx, W, lineY, p, thm.accent);
+
+      // ── Texte ─────────────────────────────────────────────────────────────
+      const textCenterY = hasBigCover ? H * 0.77 : H * 0.50;
+      ctx.globalAlpha = fade;
+
+      if (sl.style === "cta") {
+        const ph = Math.round(H * 0.068), pw = W * 0.76;
+        const px = (W-pw)/2, py = textCenterY - ph/2;
+        ctx.fillStyle = thm.accent;
+        ctx.beginPath(); ctx.roundRect(px, py, pw, ph, ph/2); ctx.fill();
+        ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.round(W*0.039)}px system-ui`;
+        ctx.textAlign = "center"; ctx.fillText(sl.text.substring(0,55), W/2, py + ph*0.66);
+      } else {
+        const isBig = ["big","title","climax","intro"].includes(sl.style);
+        const fs = isBig ? W * 0.076 : W * 0.053;
+        // Reveal progressif des mots
+        const words = sl.text.split(" ");
+        const shown = Math.max(1, Math.ceil(words.length * Math.min(1, p * 2.8)));
+        const visText = words.slice(0, shown).join(" ");
+        ctx.font = `bold ${Math.round(fs)}px system-ui`; ctx.textAlign = "center";
+        const lines = wrapText(ctx, visText || " ", W * 0.84);
+        const lh = fs * 1.38;
+        const sy = textCenterY - (lines.length * lh) / 2;
+
+        lines.forEach((ln, li) => {
+          const wordFade = shown >= words.length ? 1 : (li < lines.length - 1 ? 1 : Math.min(1, (p*2.8 - Math.floor(p*2.8*0.9))));
+          ctx.globalAlpha = fade * Math.max(0.2, wordFade);
+          if (isBig) {
+            ctx.shadowColor = thm.accent; ctx.shadowBlur = 22;
+            ctx.fillStyle = thm.accent;
+          } else {
+            ctx.fillStyle = "#ffffff"; ctx.shadowBlur = 0;
+          }
+          // Léger slide-up à l'entrée
+          const offY = (1 - fadeIn) * H * 0.025;
+          ctx.fillText(ln, W/2, sy + li*lh + offY);
+          ctx.shadowBlur = 0;
+        });
+
+        if (sl.subtext && p > 0.38) {
+          ctx.font = `${Math.round(W*0.031)}px system-ui`;
+          ctx.fillStyle = "rgba(255,255,255,0.52)";
+          ctx.globalAlpha = fade * Math.min(1, (p-0.38)/0.25);
+          wrapText(ctx, sl.subtext, W*0.78).forEach((l, i) =>
+            ctx.fillText(l, W/2, sy + lines.length*lh + W*0.038*(i+1))
+          );
+        }
+      }
+      ctx.globalAlpha = 1;
+
+      // ── Letterbox ─────────────────────────────────────────────────────────
+      drawLetterbox(ctx, W, H, barH);
+
+      // ── Fondu noir de transition ───────────────────────────────────────────
+      if (fade < 0.98) {
+        ctx.globalAlpha = (1 - fade) * 0.92;
+        ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = 1;
+      }
+
       await new Promise(r => setTimeout(r, 1000 / fps));
     }
   }
+
   await new Promise<void>(r => { rec.onstop = () => r(); rec.stop(); });
+  try { await audioCtx.close(); } catch { /* ignore */ }
   return new Blob(chunks, { type: mime });
 }
 
@@ -283,7 +520,7 @@ export default function AutoPostPage() {
       slides.push({ text: book?.title || "", duration: 4, style: "title" });
       const total = slides.reduce((s, sl) => s + sl.duration, 0);
       let elapsed = 0; const t = setInterval(() => { elapsed += 0.5; setRenderProgress(Math.min(95, Math.round(elapsed / total * 100))); }, 500);
-      const blob = await renderVideoToBlob(slides, fmt, thm, book?.coverDataUrl);
+      const blob = await renderVideoToBlob(slides, fmt, thm, book?.coverDataUrl, videoType);
       clearInterval(t); setRenderProgress(100); setVideoBlobUrl(URL.createObjectURL(blob));
     } catch (e) { console.error(e); }
     setRendering(false);
