@@ -1109,10 +1109,19 @@ export default function AutoPostPage() {
               <p className="text-center text-white/30 text-xs">Sélectionne un livre dans le panneau gauche</p>
             )}
             {scriptError && (
-              <div className="bg-red-500/10 border border-red-500/25 rounded-2xl p-4">
-                <p className="text-red-400 text-xs font-semibold mb-1">❌ Erreur de génération</p>
-                <p className="text-red-300/80 text-xs leading-relaxed">{scriptError}</p>
-                <p className="text-white/30 text-xs mt-2">Vérifie que ta clé Groq est dans <code className="bg-black/30 px-1 rounded">.env.local</code> et relance le serveur Next.js.</p>
+              <div className="bg-red-500/10 border border-red-500/25 rounded-2xl p-4 space-y-2">
+                <p className="text-red-400 text-xs font-semibold">❌ {scriptError.includes("Token HuggingFace") ? "Token HuggingFace manquant" : "Erreur de génération"}</p>
+                {scriptError.includes("Token HuggingFace") ? (
+                  <>
+                    <p className="text-white/60 text-xs">Ton token HuggingFace n&apos;est pas encore sauvegardé sur ce navigateur.</p>
+                    <button onClick={() => setTab("accounts")}
+                      className="w-full flex items-center justify-center gap-2 py-2 bg-purple-500/20 border border-purple-500/30 text-purple-300 rounded-xl text-xs font-medium hover:bg-purple-500/30 transition-colors">
+                      <KeyRound size={12} /> Aller dans Comptes → Clés IA
+                    </button>
+                  </>
+                ) : (
+                  <p className="text-red-300/80 text-xs leading-relaxed">{scriptError}</p>
+                )}
               </div>
             )}
             {script && (
