@@ -234,6 +234,7 @@ RÉPONDS UNIQUEMENT EN JSON VALIDE.`
 // ── Main handler ──────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const hfToken = process.env.HF_TOKEN || "";
+  const _v = "v5-https-native"; // version marker — supprimer après diagnostic
 
   const body = await req.json() as {
     type: string; bookTitle: string; category?: string; description?: string;
@@ -261,7 +262,8 @@ export async function POST(req: NextRequest) {
       detail: msg.includes("401") ? "Token HuggingFace invalide ou expiré" :
               msg.includes("429") ? "Limite de taux HuggingFace atteinte — réessaie dans 1 minute" :
               msg.includes("503") ? "Modèle en cours de chargement — réessaie dans 30 secondes" :
-              msg
+              msg,
+      _deployed: _v,
     }, { status: 500 });
   }
 }
