@@ -216,7 +216,8 @@ async function renderVideoToBlob(
   pexelsKey?: string,
   bookCategory?: string, bookTitle?: string,
   onStage?: (stage: string) => void,
-  visualStyle = "cinema"
+  visualStyle = "cinema",
+  useWan = false
 ): Promise<Blob> {
   const W = fmt.w, H = fmt.h;
   const barH = Math.round(H * 0.075);
@@ -261,9 +262,35 @@ async function renderVideoToBlob(
     }
   } catch (e) { console.warn("MusicGen indisponible, synth ambiant utilisé:", e); }
 
-  // ── Vidéo Pexels en fond ────────────────────────────────────────────────────
+  // ── Fond Wan2.1 IA ─────────────────────────────────────────────────────────
   let bgVideo: HTMLVideoElement | null = null;
-  if (pexelsKey) {
+  if (useWan) {
+    onStage?.("🤖 Génération fond IA Wan2.1 (1–3 min)…");
+    try {
+      const wanRes = await fetch("/api/wan-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ theme: thm.id, videoType }),
+        signal: AbortSignal.timeout(200_000), // 3 min 20s max côté navigateur
+      });
+      if (wanRes.ok) {
+        const ct = wanRes.headers.get("content-type") ?? "";
+        if (ct.includes("video") || ct.includes("octet-stream")) {
+          // Inference API → bytes directs
+          const blob = await wanRes.blob();
+          bgVideo = await loadBgVideo(URL.createObjectURL(blob));
+        } else {
+          // Gradio Space → URL JSON
+          const data = await wanRes.json() as { url?: string };
+          if (data.url) bgVideo = await loadBgVideo(data.url);
+        }
+      }
+    } catch (e) { console.warn("Wan2.1 indisponible, fond gradient utilisé:", e); }
+    if (!bgVideo) onStage?.("⚠️ Wan2.1 timeout — fond gradient utilisé");
+  }
+
+  // ── Vidéo Pexels en fond (si pas de Wan2.1) ─────────────────────────────────
+  if (!bgVideo && pexelsKey) {
     onStage?.("🎬 Chargement du fond vidéo cinématique (Pexels)…");
     try {
       const pvRes = await fetch("/api/pexels-video", {
@@ -859,7 +886,8 @@ export default function AutoPostPage() {
       slides, fmt, thm, book?.coverDataUrl, videoType, 30,
       creds.pexelsKey || undefined,
       book?.category, book?.title, (stage) => setRenderStage(stage),
-      visualStyle
+      visualStyle,
+      useWan
     );
     clearInterval(t);
     return URL.createObjectURL(blob);
@@ -1169,38 +1197,32 @@ export default function AutoPostPage() {
               </div>
 
               {/* ── Fond IA ─────────────────────────────────────────────── */}
-              {connected && (
-                <div className="border border-white/[0.06] rounded-xl p-3 space-y-2">
-                  <p className="text-white/40 text-xs font-medium">Fond vidéo</p>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {[
-                      { id: false, label: "Gradient", sub: "Toujours dispo", active: !useWan },
-                      { id: true,  label: "Wan2.1 IA", sub: wanAvailable ? "IA générative 🤖" : "Serveur local requis", active: useWan },
-                    ].map(opt => (
-                      <button key={String(opt.id)}
-                        onClick={() => { if (!opt.id || wanAvailable) setUseWan(opt.id as boolean); }}
-                        disabled={opt.id === true && !wanAvailable}
-                        className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg border text-xs transition-all disabled:opacity-30 ${opt.active ? "border-violet-500/50 bg-violet-500/10 text-white" : "border-white/[0.05] text-white/40"}`}>
-                        <span className="font-medium">{opt.label}</span>
-                        <span className="text-white/30 text-[10px]">{opt.sub}</span>
-                      </button>
-                    ))}
-                    {creds.pexelsKey && (
-                      <button onClick={() => setUseWan(false)}
-                        className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg border text-xs transition-all ${!useWan && creds.pexelsKey ? "border-blue-500/50 bg-blue-500/10 text-blue-300" : "border-white/[0.05] text-white/40"}`}>
-                        <span className="font-medium">Pexels</span>
-                        <span className="text-white/30 text-[10px]">Stock vidéo</span>
-                      </button>
-                    )}
-                  </div>
-                  {useWan && wanAvailable && (
-                    <p className="text-violet-400/70 text-[10px]">🤖 Wan2.1 génère un fond IA unique pour ce livre. Peut prendre 1–5 min.</p>
-                  )}
-                  {useWan && !wanAvailable && (
-                    <p className="text-amber-400/70 text-[10px]">Lance: <code className="bg-black/30 px-1 rounded">pip install gradio_client</code> puis redémarre le serveur</p>
+              <div className="border border-white/[0.06] rounded-xl p-3 space-y-2">
+                <p className="text-white/40 text-xs font-medium">Fond vidéo</p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: false, label: "Gradient", sub: "Toujours dispo", active: !useWan },
+                    { id: true,  label: "Wan2.1 IA", sub: "IA générative 🤖", active: useWan },
+                  ].map(opt => (
+                    <button key={String(opt.id)}
+                      onClick={() => setUseWan(opt.id as boolean)}
+                      className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg border text-xs transition-all ${opt.active ? "border-violet-500/50 bg-violet-500/10 text-white" : "border-white/[0.05] text-white/40"}`}>
+                      <span className="font-medium">{opt.label}</span>
+                      <span className="text-white/30 text-[10px]">{opt.sub}</span>
+                    </button>
+                  ))}
+                  {creds.pexelsKey && (
+                    <button onClick={() => setUseWan(false)}
+                      className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg border text-xs transition-all ${!useWan && creds.pexelsKey ? "border-blue-500/50 bg-blue-500/10 text-blue-300" : "border-white/[0.05] text-white/40"}`}>
+                      <span className="font-medium">Pexels</span>
+                      <span className="text-white/30 text-[10px]">Stock vidéo</span>
+                    </button>
                   )}
                 </div>
-              )}
+                {useWan && (
+                  <p className="text-violet-400/70 text-[10px]">🤖 Wan2.1 génère un fond vidéo IA via Vercel — pas de serveur local requis. Génération : 1–3 min.</p>
+                )}
+              </div>
             </div>
           </div>
 
