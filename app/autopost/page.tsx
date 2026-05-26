@@ -533,7 +533,19 @@ export default function AutoPostPage() {
     checkConnection();
   }, []);
 
-  const saveCreds = (next: Creds) => { setCreds(next); localStorage.setItem("ba_creds", JSON.stringify(next)); };
+  // Nettoie un token : garde uniquement ASCII imprimable (pas d'emojis, pas d'espaces cachés)
+  const sanitizeToken = (v: string) => v.replace(/[^\x20-\x7E]/g, "").trim();
+
+  const saveCreds = (next: Creds) => {
+    // Sanitize les tokens avant de sauvegarder
+    const clean: Creds = {
+      ...next,
+      hfToken: sanitizeToken(next.hfToken),
+      pexelsKey: sanitizeToken(next.pexelsKey),
+    };
+    setCreds(clean);
+    localStorage.setItem("ba_creds", JSON.stringify(clean));
+  };
 
   const book = books.find(b => b.id === selectedBook);
   const fmt = FORMATS.find(f => f.id === videoFormat) || FORMATS[0];
@@ -640,9 +652,10 @@ export default function AutoPostPage() {
     }
     setGenerating(true); setScript(null); setVideoBlobUrl(null); setScriptError(null); setActiveVariant(0);
     try {
+      const cleanToken = sanitizeToken(creds.hfToken);
       const res = await fetch("/api/video-script", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-hf-token": creds.hfToken },
+        headers: { "Content-Type": "application/json", "x-hf-token": cleanToken },
         body: JSON.stringify({
           type: videoType,
           bookTitle: book.title,
@@ -667,7 +680,13 @@ export default function AutoPostPage() {
     } catch (e) {
       console.error("[generateScript]", e);
       const msg = e instanceof Error ? e.message : String(e);
-      setScriptError(msg.includes("AbortError") ? "Timeout (60s) — réessaie ou vérifie ta clé Groq dans .env.local" : msg);
+      if (msg.includes("ByteString") || msg.includes("greater than 255")) {
+        setScriptError("TOKEN_CORRUPT");
+      } else if (msg.includes("AbortError") || msg.includes("timeout")) {
+        setScriptError("Timeout (60s) — le modèle est peut-être surchargé, réessaie dans quelques secondes.");
+      } else {
+        setScriptError(msg);
+      }
     }
     setGenerating(false);
   };
@@ -1110,8 +1129,23 @@ export default function AutoPostPage() {
             )}
             {scriptError && (
               <div className="bg-red-500/10 border border-red-500/25 rounded-2xl p-4 space-y-2">
-                <p className="text-red-400 text-xs font-semibold">❌ {scriptError.includes("Token HuggingFace") ? "Token HuggingFace manquant" : "Erreur de génération"}</p>
-                {scriptError.includes("Token HuggingFace") ? (
+                <p className="text-red-400 text-xs font-semibold">
+                  {scriptError === "TOKEN_CORRUPT" ? "⚠️ Token corrompu" : scriptError.includes("Token HuggingFace") ? "🔑 Token HuggingFace manquant" : "❌ Erreur de génération"}
+                </p>
+                {scriptError === "TOKEN_CORRUPT" ? (
+                  <>
+                    <p className="text-white/60 text-xs">Ton token contient des caractères invalides (emoji ou espace caché). Efface-le et recolle-le proprement.</p>
+                    <button onClick={() => {
+                      const clean: Creds = { ...creds, hfToken: "" };
+                      setCreds(clean);
+                      localStorage.setItem("ba_creds", JSON.stringify(clean));
+                      setScriptError(null);
+                      setTab("accounts");
+                    }} className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/40 text-orange-300 text-xs rounded-xl transition-all">
+                      <KeyRound size={12} /> Réinitialiser le token
+                    </button>
+                  </>
+                ) : scriptError.includes("Token HuggingFace") ? (
                   <>
                     <p className="text-white/60 text-xs">Ton token HuggingFace n&apos;est pas encore sauvegardé sur ce navigateur.</p>
                     <button onClick={() => setTab("accounts")}
