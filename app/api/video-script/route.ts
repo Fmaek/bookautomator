@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// ── HuggingFace Inference Providers (Qwen2.5-72B via Together/Nebius/etc.) ────
+// ── HuggingFace Inference Providers ──────────────────────────────────────────
 const HF_API = "https://api-inference.huggingface.co/v1/chat/completions";
-const MODEL  = "Qwen/Qwen2.5-72B-Instruct";
+// Modèles en cascade : 72B préféré, fallback sur 7B si indispo
+const MODELS = [
+  "Qwen/Qwen2.5-72B-Instruct",
+  "Qwen/Qwen2.5-7B-Instruct",
+];
 
 async function callQwen(
   hfToken: string,
@@ -10,36 +14,46 @@ async function callQwen(
   maxTokens = 1800,
   temperature = 0.90
 ): Promise<string> {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch(HF_API, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${hfToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages,
-        max_tokens: maxTokens,
-        temperature,
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(90_000),
-    });
+  let lastError = "";
+  for (const model of MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 90_000);
+      try {
+        const res = await fetch(HF_API, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${hfToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, stream: false }),
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
 
-    if (res.status === 503 || res.status === 429) {
-      const wait = parseInt(res.headers.get("retry-after") || "15", 10) * 1000;
-      await new Promise(r => setTimeout(r, Math.min(wait, 20_000)));
-      continue;
+        if (res.status === 503 || res.status === 429) {
+          const wait = parseInt(res.headers.get("retry-after") || "15", 10) * 1000;
+          await new Promise(r => setTimeout(r, Math.min(wait, 20_000)));
+          continue;
+        }
+        if (!res.ok) {
+          const err = await res.text();
+          lastError = `HuggingFace ${res.status}: ${err.substring(0, 300)}`;
+          break; // essaie le modèle suivant
+        }
+        const data = await res.json() as { choices: { message: { content: string } }[] };
+        return data.choices[0]?.message?.content ?? "";
+      } catch (e) {
+        clearTimeout(timer);
+        lastError = String(e);
+        if (attempt === 0) {
+          await new Promise(r => setTimeout(r, 2_000)); // courte pause avant retry
+        }
+      }
     }
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`HuggingFace ${res.status}: ${err.substring(0, 300)}`);
-    }
-    const data = await res.json() as { choices: { message: { content: string } }[] };
-    return data.choices[0]?.message?.content ?? "";
+    console.warn(`[callQwen] ${model} failed (${lastError}), trying fallback...`);
   }
-  throw new Error("Qwen indisponible après 3 tentatives — réessaie dans quelques secondes.");
+  throw new Error(`Tous les modèles indisponibles — ${lastError}`);
 }
 
 // ── Extraction JSON robuste ────────────────────────────────────────────────────
@@ -202,12 +216,6 @@ RÉPONDS UNIQUEMENT EN JSON VALIDE.`
 // ── Main handler ──────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const hfToken = process.env.HF_TOKEN || "";
-  if (!hfToken) {
-    return NextResponse.json({
-      error: "Token HuggingFace non configuré",
-      detail: "La variable d'environnement HF_TOKEN n'est pas définie sur ce serveur."
-    }, { status: 400 });
-  }
 
   const body = await req.json() as {
     type: string; bookTitle: string; category?: string; description?: string;

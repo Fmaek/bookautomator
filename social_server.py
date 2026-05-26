@@ -46,7 +46,7 @@ except ImportError:
     HAS_GRADIO = False
     print("⚠  gradio_client non installé. Lance: pip install gradio_client")
 
-# ── Token HuggingFace (depuis env — défini dans .env ou variable système) ────
+# ── Token HuggingFace ────────────────────────────────────────────────────────
 HF_TOKEN: str = os.environ.get("HF_TOKEN", "")
 
 _wan_pipe = None  # pipeline local chargé à la demande

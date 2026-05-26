@@ -54,10 +54,6 @@ export async function POST(req: NextRequest) {
   const body = await req.json() as { videoType: string; theme: string; duration: number };
   const hfToken = process.env.HF_TOKEN || "";
 
-  if (!hfToken) {
-    return NextResponse.json({ error: "HF_TOKEN non configuré sur ce serveur" }, { status: 500 });
-  }
-
   const prompt = getPrompt(body.videoType, body.theme);
   // ~50 tokens/seconde, max 512 (≈10s), min 256 (≈5s)
   const maxTokens = Math.min(512, Math.max(256, Math.round((body.duration || 20) * 50)));
