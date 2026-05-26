@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import axios from "axios";
 
 // ── Augmenter le timeout Vercel (60s max sur Hobby, 300s sur Pro) ─────────────
 export const maxDuration = 60;
@@ -20,38 +21,33 @@ async function callQwen(
 ): Promise<string> {
   let lastError = "";
   for (const model of MODELS) {
-    const url = HF_ROUTER;
     for (let attempt = 0; attempt < 2; attempt++) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 55_000); // sous le maxDuration
       try {
-        const res = await fetch(url, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${hfToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, stream: false }),
-          signal: controller.signal,
-        });
-        clearTimeout(timer);
-
-        if (res.status === 503 || res.status === 429) {
-          const wait = parseInt(res.headers.get("retry-after") || "10", 10) * 1000;
-          await new Promise(r => setTimeout(r, Math.min(wait, 12_000)));
+        const resp = await axios.post(
+          HF_ROUTER,
+          { model, messages, max_tokens: maxTokens, temperature, stream: false },
+          {
+            headers: {
+              Authorization: `Bearer ${hfToken}`,
+              "Content-Type": "application/json",
+            },
+            timeout: 55_000,
+            validateStatus: (s) => s < 600,
+          }
+        );
+        if (resp.status === 503 || resp.status === 429) {
+          const wait = Math.min(parseInt(resp.headers["retry-after"] || "10", 10) * 1000, 12_000);
+          await new Promise(r => setTimeout(r, wait));
           continue;
         }
-        if (!res.ok) {
-          const err = await res.text();
-          lastError = `HF ${res.status}: ${err.substring(0, 200)}`;
+        if (resp.status >= 400) {
+          lastError = `HF ${resp.status}: ${JSON.stringify(resp.data).substring(0, 200)}`;
           break; // modèle suivant
         }
-        const data = await res.json() as { choices: { message: { content: string } }[] };
-        return data.choices[0]?.message?.content ?? "";
+        return (resp.data as { choices: { message: { content: string } }[] })
+          .choices[0]?.message?.content ?? "";
       } catch (e) {
-        clearTimeout(timer);
-        const cause = (e as { cause?: unknown })?.cause;
-        lastError = cause ? `${String(e)} — cause: ${String(cause)}` : String(e);
+        lastError = String(e);
         console.error(`[callQwen] ${model} attempt ${attempt}:`, lastError);
         if (attempt === 0) await new Promise(r => setTimeout(r, 1_500));
       }
