@@ -220,6 +220,10 @@ async function renderVideoToBlob(
 
   // ── Audio ──────────────────────────────────────────────────────────────────
   const audioCtx = new AudioContext();
+  // Débloquer l'AudioContext (politique autoplay navigateur)
+  if (audioCtx.state === "suspended") {
+    await audioCtx.resume();
+  }
   const audioDest = audioCtx.createMediaStreamDestination();
 
   // Toujours générer le synth ambiant (fallback / sous-couche)
@@ -311,14 +315,59 @@ async function renderVideoToBlob(
         bg2.addColorStop(0, thm.bg1 + "99"); bg2.addColorStop(1, thm.bg2 + "bb");
         ctx.fillStyle = bg2; ctx.fillRect(0, 0, W, H);
       } else {
-        // Fallback gradient pur
-        const bg = ctx.createLinearGradient(0, 0, W*0.7, H);
+        // ── Fond cinématique animé (gradient multicouche + bokeh) ──────────
+        const t01 = gFrame / Math.max(1, slides.reduce((s,sl)=>s+sl.duration,0) * fps);
+        // Fond base
+        const bg = ctx.createLinearGradient(0, 0, W, H);
         bg.addColorStop(0, thm.bg1); bg.addColorStop(1, thm.bg2);
         ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-        // Lueur centrale
-        const glow = ctx.createRadialGradient(W/2, H*0.4, 0, W/2, H*0.4, W*0.6);
-        glow.addColorStop(0, thm.accent + "1a"); glow.addColorStop(1, "transparent");
+        // Lueur principale qui pulse doucement
+        const pulseR = W * (0.55 + 0.08 * Math.sin(gFrame * 0.018));
+        const glowY = H * (0.38 + 0.06 * Math.sin(gFrame * 0.011));
+        const glow = ctx.createRadialGradient(W/2, glowY, 0, W/2, glowY, pulseR);
+        glow.addColorStop(0, thm.accent + "28"); glow.addColorStop(0.5, thm.accent + "0e"); glow.addColorStop(1, "transparent");
         ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+        // Deuxième lueur décalée
+        const glow2 = ctx.createRadialGradient(W*0.8, H*0.7, 0, W*0.8, H*0.7, W*0.45);
+        glow2.addColorStop(0, thm.bg2 + "cc"); glow2.addColorStop(1, "transparent");
+        ctx.fillStyle = glow2; ctx.fillRect(0, 0, W, H);
+        // Bokeh — cercles flous animés
+        for (let i = 0; i < 18; i++) {
+          const bx = ((i * 137.5 + gFrame * 0.12) % W);
+          const by = ((i * 97.3  + gFrame * 0.08) % H);
+          const br = 8 + (i % 5) * 14;
+          const ba = 0.04 + 0.04 * Math.abs(Math.sin(gFrame * 0.022 + i));
+          const bg3 = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+          bg3.addColorStop(0, thm.accent + Math.round(ba * 255).toString(16).padStart(2, "0"));
+          bg3.addColorStop(1, "transparent");
+          ctx.fillStyle = bg3; ctx.fillRect(bx-br, by-br, br*2, br*2);
+        }
+        // Lignes horizontales subtiles (scanlines cinéma)
+        ctx.globalAlpha = 0.03;
+        for (let y = 0; y < H; y += 4) {
+          ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 2);
+        }
+        ctx.globalAlpha = 1;
+        // Dégradé bas (shadow pour texte)
+        const shadowGrad = ctx.createLinearGradient(0, H*0.55, 0, H);
+        shadowGrad.addColorStop(0, "transparent"); shadowGrad.addColorStop(1, "rgba(0,0,0,0.55)");
+        ctx.fillStyle = shadowGrad; ctx.fillRect(0, H*0.55, W, H*0.45);
+        // Ligne de lumière en haut
+        ctx.globalAlpha = 0.12 + 0.06 * Math.sin(gFrame * 0.025);
+        const topLine = ctx.createLinearGradient(0, 0, W, 0);
+        topLine.addColorStop(0, "transparent"); topLine.addColorStop(0.5, thm.accent); topLine.addColorStop(1, "transparent");
+        ctx.fillStyle = topLine; ctx.fillRect(0, 0, W, 1.5);
+        ctx.globalAlpha = 1;
+        // Étoiles/particules fines (constellation)
+        for (let i = 0; i < 55; i++) {
+          const sx = (i * 233.7 + t01 * 8) % W;
+          const sy = (i * 151.3) % H;
+          const sa = (0.15 + 0.25 * Math.abs(Math.sin(gFrame * 0.03 + i))) * (1 - i/80);
+          const sr = 0.4 + (i%4) * 0.35;
+          ctx.globalAlpha = sa; ctx.fillStyle = "#fff";
+          ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI*2); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
       }
 
       drawParticles(ctx, W, H, thm.accent, gFrame);
@@ -354,46 +403,59 @@ async function renderVideoToBlob(
       ctx.globalAlpha = fade;
 
       if (sl.style === "cta") {
-        const ph = Math.round(H * 0.068), pw = W * 0.76;
+        const ph = Math.round(H * 0.075), pw = W * 0.80;
         const px = (W-pw)/2, py = textCenterY - ph/2;
+        ctx.globalAlpha = fade * 0.95;
+        ctx.shadowColor = thm.accent; ctx.shadowBlur = 28 * fade;
         ctx.fillStyle = thm.accent;
         ctx.beginPath(); ctx.roundRect(px, py, pw, ph, ph/2); ctx.fill();
-        ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.round(W*0.039)}px system-ui`;
-        ctx.textAlign = "center"; ctx.fillText(sl.text.substring(0,55), W/2, py + ph*0.66);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.round(W*0.041)}px system-ui`;
+        ctx.textAlign = "center"; ctx.globalAlpha = fade;
+        ctx.fillText(sl.text.substring(0,55), W/2, py + ph*0.66);
       } else {
         const isBig = ["big","title","climax","intro"].includes(sl.style);
-        const fs = isBig ? W * 0.076 : W * 0.053;
+        const fs = isBig ? W * 0.078 : W * 0.055;
         // Reveal progressif des mots
         const words = sl.text.split(" ");
-        const shown = Math.max(1, Math.ceil(words.length * Math.min(1, p * 2.8)));
+        const shown = Math.max(1, Math.ceil(words.length * Math.min(1, p * 2.6)));
         const visText = words.slice(0, shown).join(" ");
         ctx.font = `bold ${Math.round(fs)}px system-ui`; ctx.textAlign = "center";
-        const lines = wrapText(ctx, visText || " ", W * 0.84);
-        const lh = fs * 1.38;
+        const lines = wrapText(ctx, visText || " ", W * 0.86);
+        const lh = fs * 1.42;
         const sy = textCenterY - (lines.length * lh) / 2;
 
         lines.forEach((ln, li) => {
-          const wordFade = shown >= words.length ? 1 : (li < lines.length - 1 ? 1 : Math.min(1, (p*2.8 - Math.floor(p*2.8*0.9))));
-          ctx.globalAlpha = fade * Math.max(0.2, wordFade);
+          const wordFade = shown >= words.length ? 1 : (li < lines.length - 1 ? 1 : Math.min(1, (p*2.6 - Math.floor(p*2.6*0.9))));
+          ctx.globalAlpha = fade * Math.max(0.18, wordFade);
+          const offY = (1 - fadeIn) * H * 0.03;
+          const lx = W/2, ly = sy + li*lh + offY;
           if (isBig) {
-            ctx.shadowColor = thm.accent; ctx.shadowBlur = 22;
-            ctx.fillStyle = thm.accent;
+            // Ombre de profondeur
+            ctx.shadowColor = "rgba(0,0,0,0.85)"; ctx.shadowBlur = 10;
+            ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillText(ln, lx+2, ly+2);
+            ctx.shadowBlur = 0;
+            // Halo accent
+            ctx.shadowColor = thm.accent; ctx.shadowBlur = 32 * fade;
+            ctx.fillStyle = thm.accent; ctx.fillText(ln, lx, ly);
+            ctx.shadowBlur = 0;
           } else {
-            ctx.fillStyle = "#ffffff"; ctx.shadowBlur = 0;
+            ctx.shadowColor = "rgba(0,0,0,0.9)"; ctx.shadowBlur = 7;
+            ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillText(ln, lx+1.5, ly+1.5);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = "#ffffff"; ctx.fillText(ln, lx, ly);
           }
-          // Léger slide-up à l'entrée
-          const offY = (1 - fadeIn) * H * 0.025;
-          ctx.fillText(ln, W/2, sy + li*lh + offY);
-          ctx.shadowBlur = 0;
         });
 
-        if (sl.subtext && p > 0.38) {
-          ctx.font = `${Math.round(W*0.031)}px system-ui`;
-          ctx.fillStyle = "rgba(255,255,255,0.52)";
-          ctx.globalAlpha = fade * Math.min(1, (p-0.38)/0.25);
-          wrapText(ctx, sl.subtext, W*0.78).forEach((l, i) =>
-            ctx.fillText(l, W/2, sy + lines.length*lh + W*0.038*(i+1))
+        if (sl.subtext && p > 0.32) {
+          ctx.font = `${Math.round(W*0.033)}px system-ui`;
+          ctx.globalAlpha = fade * Math.min(1, (p-0.32)/0.22);
+          ctx.shadowColor = "rgba(0,0,0,0.7)"; ctx.shadowBlur = 4;
+          ctx.fillStyle = "rgba(255,255,255,0.62)";
+          wrapText(ctx, sl.subtext, W*0.80).forEach((l, i) =>
+            ctx.fillText(l, W/2, sy + lines.length*lh + W*0.040*(i+1))
           );
+          ctx.shadowBlur = 0;
         }
       }
       ctx.globalAlpha = 1;
@@ -433,6 +495,7 @@ export default function AutoPostPage() {
   const [videoFormat, setVideoFormat] = useState("portrait");
   const [videoTheme, setVideoTheme] = useState("dark");
   const [generating, setGenerating] = useState(false);
+  const [scriptError, setScriptError] = useState<string | null>(null);
   const [script, setScript] = useState<Record<string, unknown> | null>(null);
   const [activeVariant, setActiveVariant] = useState(0);
   const [rendering, setRendering] = useState(false);
@@ -571,18 +634,37 @@ export default function AutoPostPage() {
   // ── Video ─────────────────────────────────────────────────────────────────────
   const generateScript = async () => {
     if (!book) return;
-    setGenerating(true); setScript(null); setVideoBlobUrl(null);
+    setGenerating(true); setScript(null); setVideoBlobUrl(null); setScriptError(null); setActiveVariant(0);
     try {
       const res = await fetch("/api/video-script", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: videoType, bookTitle: book.title, category: book.category, chapters: book.chapters?.slice(0, 2) }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: videoType,
+          bookTitle: book.title,
+          category: book.category,
+          description: (book as unknown as Record<string, unknown>).description as string | undefined,
+          targetAudience: (book as unknown as Record<string, unknown>).targetAudience as string | undefined,
+          themes: (book as unknown as Record<string, unknown>).themes as string | undefined,
+          price: (book as unknown as Record<string, unknown>).price as number | undefined,
+          chapters: book.chapters,
+        }),
+        signal: AbortSignal.timeout(60_000),
       });
       const data = await res.json() as Record<string, unknown>;
+      if (!res.ok || data.error) {
+        const detail = data.detail ? ` — ${String(data.detail)}` : "";
+        throw new Error(String(data.error || `Erreur serveur ${res.status}`) + detail);
+      }
       setScript(data);
       const caps = data.captions as { instagram?: string } | undefined;
       const variantCap = (data.variants as { caption_instagram?: string }[])?.[0]?.caption_instagram;
       setVideoCaption(caps?.instagram || variantCap || "");
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error("[generateScript]", e);
+      const msg = e instanceof Error ? e.message : String(e);
+      setScriptError(msg.includes("AbortError") ? "Timeout (60s) — réessaie ou vérifie ta clé Groq dans .env.local" : msg);
+    }
     setGenerating(false);
   };
 
@@ -1016,8 +1098,18 @@ export default function AutoPostPage() {
             <button onClick={generateScript} disabled={generating || !book}
               className="w-full flex items-center justify-center gap-2 py-3.5 bg-gradient-to-r from-violet-500 to-pink-500 hover:from-violet-600 hover:to-pink-600 disabled:opacity-40 text-white rounded-2xl font-semibold transition-all">
               {generating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-              {generating ? "Génération…" : "Générer le script IA"}
+              {generating ? "Génération du script IA…" : "Générer le script IA"}
             </button>
+            {!book && (
+              <p className="text-center text-white/30 text-xs">Sélectionne un livre dans le panneau gauche</p>
+            )}
+            {scriptError && (
+              <div className="bg-red-500/10 border border-red-500/25 rounded-2xl p-4">
+                <p className="text-red-400 text-xs font-semibold mb-1">❌ Erreur de génération</p>
+                <p className="text-red-300/80 text-xs leading-relaxed">{scriptError}</p>
+                <p className="text-white/30 text-xs mt-2">Vérifie que ta clé Groq est dans <code className="bg-black/30 px-1 rounded">.env.local</code> et relance le serveur Next.js.</p>
+              </div>
+            )}
             {script && (
               <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 space-y-3 max-h-96 overflow-y-auto">
                 {videoType === "citation" && Array.isArray(script.variants) && (
