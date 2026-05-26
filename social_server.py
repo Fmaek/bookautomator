@@ -252,6 +252,43 @@ async def post_facebook_playwright(text: str, image_base64: Optional[str] = None
         return {"ok": False, "error": "Bouton Publier non trouvé"}
 
 # ── Routes ────────────────────────────────────────────────────────────────────
+from fastapi.responses import HTMLResponse
+
+@app.get("/", response_class=HTMLResponse)
+def root():
+    q = load_queue()
+    pending = len([i for i in q if i.get("status") == "pending"])
+    done = len([i for i in q if i.get("status") == "done"])
+    return f"""<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>BookAutomator Social Server</title>
+<style>
+  body{{font-family:system-ui,sans-serif;background:#0d0d14;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}}
+  .card{{background:#1a1a2e;border:1px solid #2d2d4a;border-radius:16px;padding:40px;max-width:480px;width:100%;text-align:center}}
+  h1{{color:#a78bfa;margin:0 0 8px}}
+  .badge{{display:inline-block;padding:4px 12px;border-radius:20px;font-size:13px;margin:4px}}
+  .ok{{background:#14532d;color:#86efac}}.warn{{background:#451a03;color:#fdba74}}
+  .stat{{display:flex;justify-content:space-around;margin:24px 0;gap:12px}}
+  .stat div{{background:#0d0d14;border-radius:12px;padding:16px;flex:1}}
+  .stat .n{{font-size:28px;font-weight:700;color:#a78bfa}}
+  .stat .l{{font-size:12px;color:#64748b;margin-top:4px}}
+  a{{color:#818cf8;text-decoration:none;font-size:14px}}
+  a:hover{{color:#a78bfa}}
+</style></head>
+<body><div class="card">
+  <h1>📚 BookAutomator</h1>
+  <p style="color:#64748b;margin:0 0 20px">Serveur de publication sociale · Port 8001</p>
+  <span class="badge ok">✓ En ligne</span>
+  <span class="badge {'ok' if HAS_INSTA else 'warn'}">{'✓ Instagram' if HAS_INSTA else '⚠ instagrapi manquant'}</span>
+  <span class="badge {'ok' if HAS_PLAYWRIGHT else 'warn'}">{'✓ Playwright' if HAS_PLAYWRIGHT else '⚠ playwright manquant'}</span>
+  <div class="stat">
+    <div><div class="n">{pending}</div><div class="l">En attente</div></div>
+    <div><div class="n">{done}</div><div class="l">Postés</div></div>
+  </div>
+  <a href="http://localhost:3001/autopost">→ Ouvrir Studio Social</a><br><br>
+  <a href="/docs" style="font-size:12px;color:#475569">API docs (FastAPI)</a>
+</div></body></html>"""
+
 @app.get("/api/book/status")
 def status():
     q = load_queue()
@@ -372,7 +409,7 @@ def run_scheduler():
                 if item["status"] == "pending" and item.get("scheduled_at"):
                     sched = datetime.fromisoformat(item["scheduled_at"])
                     if now >= sched:
-                        requests.post("http://localhost:8000/api/book/post-next")
+                        requests.post("http://localhost:8001/api/book/post-next")
                         break
         except Exception as e:
             print(f"Scheduler error: {e}")
