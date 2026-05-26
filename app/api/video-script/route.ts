@@ -3,9 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 // ── Augmenter le timeout Vercel (60s max sur Hobby, 300s sur Pro) ─────────────
 export const maxDuration = 60;
 
-// ── HuggingFace Serverless Inference API (endpoint par modèle — tier gratuit) ─
-// Format: /models/{model}/v1/chat/completions  (OpenAI-compatible, gratuit)
-const HF_BASE = "https://api-inference.huggingface.co/models";
+// ── HuggingFace Router (nouveau domaine, remplace api-inference.huggingface.co) ─
+const HF_ROUTER = "https://router.huggingface.co/v1/chat/completions";
 
 // Cascade : 72B préféré → 7B fallback
 const MODELS = [
@@ -21,7 +20,7 @@ async function callQwen(
 ): Promise<string> {
   let lastError = "";
   for (const model of MODELS) {
-    const url = `${HF_BASE}/${model}/v1/chat/completions`;
+    const url = HF_ROUTER;
     for (let attempt = 0; attempt < 2; attempt++) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 55_000); // sous le maxDuration
