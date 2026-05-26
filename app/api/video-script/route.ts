@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// ── HuggingFace Inference Providers ──────────────────────────────────────────
-const HF_API = "https://api-inference.huggingface.co/v1/chat/completions";
-// Modèles en cascade : 72B préféré, fallback sur 7B si indispo
+// ── Augmenter le timeout Vercel (60s max sur Hobby, 300s sur Pro) ─────────────
+export const maxDuration = 60;
+
+// ── HuggingFace Serverless Inference API (endpoint par modèle — tier gratuit) ─
+// Format: /models/{model}/v1/chat/completions  (OpenAI-compatible, gratuit)
+const HF_BASE = "https://api-inference.huggingface.co/models";
+
+// Cascade : 72B préféré → 7B fallback
 const MODELS = [
   "Qwen/Qwen2.5-72B-Instruct",
   "Qwen/Qwen2.5-7B-Instruct",
@@ -16,11 +21,12 @@ async function callQwen(
 ): Promise<string> {
   let lastError = "";
   for (const model of MODELS) {
+    const url = `${HF_BASE}/${model}/v1/chat/completions`;
     for (let attempt = 0; attempt < 2; attempt++) {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 90_000);
+      const timer = setTimeout(() => controller.abort(), 55_000); // sous le maxDuration
       try {
-        const res = await fetch(HF_API, {
+        const res = await fetch(url, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${hfToken}`,
@@ -32,28 +38,27 @@ async function callQwen(
         clearTimeout(timer);
 
         if (res.status === 503 || res.status === 429) {
-          const wait = parseInt(res.headers.get("retry-after") || "15", 10) * 1000;
-          await new Promise(r => setTimeout(r, Math.min(wait, 20_000)));
+          const wait = parseInt(res.headers.get("retry-after") || "10", 10) * 1000;
+          await new Promise(r => setTimeout(r, Math.min(wait, 12_000)));
           continue;
         }
         if (!res.ok) {
           const err = await res.text();
-          lastError = `HuggingFace ${res.status}: ${err.substring(0, 300)}`;
-          break; // essaie le modèle suivant
+          lastError = `HF ${res.status}: ${err.substring(0, 200)}`;
+          break; // modèle suivant
         }
         const data = await res.json() as { choices: { message: { content: string } }[] };
         return data.choices[0]?.message?.content ?? "";
       } catch (e) {
         clearTimeout(timer);
-        lastError = String(e);
-        if (attempt === 0) {
-          await new Promise(r => setTimeout(r, 2_000)); // courte pause avant retry
-        }
+        const cause = (e as { cause?: unknown })?.cause;
+        lastError = cause ? `${String(e)} — cause: ${String(cause)}` : String(e);
+        console.error(`[callQwen] ${model} attempt ${attempt}:`, lastError);
+        if (attempt === 0) await new Promise(r => setTimeout(r, 1_500));
       }
     }
-    console.warn(`[callQwen] ${model} failed (${lastError}), trying fallback...`);
   }
-  throw new Error(`Tous les modèles indisponibles — ${lastError}`);
+  throw new Error(`Indisponible — ${lastError}`);
 }
 
 // ── Extraction JSON robuste ────────────────────────────────────────────────────
