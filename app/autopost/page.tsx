@@ -579,7 +579,9 @@ export default function AutoPostPage() {
       });
       const data = await res.json() as Record<string, unknown>;
       setScript(data);
-      setVideoCaption((data.caption as string) || ((data.variants as {caption:string}[])?.[0]?.caption) || "");
+      const caps = data.captions as { instagram?: string } | undefined;
+      const variantCap = (data.variants as { caption_instagram?: string }[])?.[0]?.caption_instagram;
+      setVideoCaption(caps?.instagram || variantCap || "");
     } catch (e) { console.error(e); }
     setGenerating(false);
   };
@@ -588,24 +590,31 @@ export default function AutoPostPage() {
   const buildSlides = (): Slide[] => {
     if (!script) return [];
     let slides: Slide[] = [];
-    if (videoType === "teaser" || videoType === "promo") {
+    if (videoType === "teaser") {
       const raw = (script.slides as Slide[]) || [];
-      slides = videoType === "teaser" && script.hook
-        ? [{ text: script.hook as string, duration: 2.5, style: "big" }, ...raw]
+      const hooks = script.hooks as string[] | undefined;
+      slides = hooks?.[0]
+        ? [{ text: hooks[0], duration: 2.5, style: "big" }, ...raw]
         : raw;
+    } else if (videoType === "promo") {
+      const angle = activeVariant === 0
+        ? (script.angle_a as { slides: Slide[] } | undefined)?.slides
+        : (script.angle_b as { slides: Slide[] } | undefined)?.slides;
+      slides = angle || [];
     } else if (videoType === "booktrailer") {
       slides = ((script.scenes as {text:string;narration?:string;duration:number;style:string}[]) || [])
         .map(s => ({ text: s.text, subtext: s.narration, duration: s.duration, style: s.style }));
     } else if (videoType === "citation") {
-      const v = (script.variants as {quote:string;author:string;context:string}[])?.[activeVariant];
+      const v = (script.variants as {intro:string;quote:string;punchline:string}[])?.[activeVariant];
       if (v) slides = [
-        { text: v.context, duration: 3, style: "normal" },
+        { text: v.intro || "", duration: 3, style: "normal" },
         { text: `"${v.quote}"`, duration: 6, style: "big" },
-        { text: `— ${v.author}`, duration: 3, style: "normal" },
+        { text: v.punchline || "", duration: 3, style: "normal" },
       ];
     } else if (videoType === "shorts") {
       slides = ((script.onscreenText as string[]) || []).map((t, i) => ({ text: t, duration: 7, style: i === 0 ? "big" : "normal" }));
-      if (script.hook) slides = [{ text: script.hook as string, duration: 3, style: "intro" }, ...slides];
+      const hooksS = script.hooks as string[] | undefined;
+      if (hooksS?.[0]) slides = [{ text: hooksS[0], duration: 3, style: "intro" }, ...slides];
     }
     if (!slides.length) slides = [{ text: book?.title || "", duration: 3, style: "title" }];
     slides.push({ text: book?.title || "", duration: 4, style: "title" });
@@ -1012,13 +1021,117 @@ export default function AutoPostPage() {
             {script && (
               <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 space-y-3 max-h-96 overflow-y-auto">
                 {videoType === "citation" && Array.isArray(script.variants) && (
-                  <div className="flex gap-1.5">{(script.variants as unknown[]).map((_, i) => <button key={i} onClick={() => setActiveVariant(i)} className={`px-3 py-1 rounded-lg text-xs font-medium ${activeVariant === i ? "bg-amber-500/30 text-amber-300" : "bg-white/5 text-white/40"}`}>Var. {i + 1}</button>)}</div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {(script.variants as {style_name?:string}[]).map((v, i) => (
+                      <button key={i} onClick={() => setActiveVariant(i)}
+                        className={`px-3 py-1 rounded-lg text-xs font-medium ${activeVariant === i ? "bg-amber-500/30 text-amber-300" : "bg-white/5 text-white/40"}`}>
+                        {v.style_name || `Var. ${i + 1}`}
+                      </button>
+                    ))}
+                  </div>
                 )}
                 <div className="space-y-1.5">
-                  {(videoType === "teaser" || videoType === "promo") && Array.isArray(script.slides) && (script.slides as Slide[]).map((s, i) => <div key={i} className="flex items-start gap-2 p-2.5 bg-white/[0.03] rounded-xl"><span className="text-violet-400/60 text-xs shrink-0">{s.duration}s</span><p className="text-white text-sm">{s.text}</p></div>)}
-                  {videoType === "citation" && Array.isArray(script.variants) && (script.variants as {context:string;quote:string}[])[activeVariant] && <div className="p-3 bg-amber-500/8 border border-amber-500/15 rounded-xl"><p className="text-white font-medium text-sm">"{(script.variants as {quote:string}[])[activeVariant].quote}"</p></div>}
-                  {videoType === "shorts" && !!script.hook && <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl"><p className="text-red-300 text-xs mb-1">HOOK</p><p className="text-white text-sm">{String(script.hook)}</p></div>}
-                  {videoType === "booktrailer" && Array.isArray(script.scenes) && (script.scenes as {id:number;text:string;duration:number}[]).map(s => <div key={s.id} className="p-2.5 bg-white/[0.03] rounded-xl"><p className="text-white/40 text-xs mb-1">Scène {s.id} · {s.duration}s</p><p className="text-white text-sm">{s.text}</p></div>)}
+                  {videoType === "teaser" ? (
+                    <>
+                      {Array.isArray(script.hooks) ? (
+                        <div className="space-y-1.5 mb-2">
+                          <p className="text-white/40 text-xs font-semibold">Hooks A/B/C</p>
+                          {(script.hooks as string[]).map((h, i) => (
+                            <div key={i} className="flex gap-2 p-2.5 bg-violet-500/10 border border-violet-500/20 rounded-xl">
+                              <span className="text-violet-400/60 text-xs shrink-0">H{i+1}</span>
+                              <p className="text-white text-sm">{h}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {Array.isArray(script.slides) ? (script.slides as Slide[]).map((s, i) => (
+                        <div key={i} className="flex items-start gap-2 p-2.5 bg-white/[0.03] rounded-xl">
+                          <span className="text-violet-400/60 text-xs shrink-0">{s.duration}s</span>
+                          <p className="text-white text-sm">{s.text}</p>
+                        </div>
+                      )) : null}
+                    </>
+                  ) : videoType === "promo" ? (
+                    <div className="space-y-2">
+                      {script.headline ? <p className="text-amber-300 text-xs font-semibold px-1">{String(script.headline)}</p> : null}
+                      {[
+                        { key: "angle_a", label: "Angle A — Problème",        idx: 0 },
+                        { key: "angle_b", label: "Angle B — Transformation",  idx: 1 },
+                      ].map(({ key, label, idx }) => (
+                        <div key={key}>
+                          <button onClick={() => setActiveVariant(idx)}
+                            className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium mb-1.5 transition-all ${activeVariant === idx ? "bg-pink-500/20 border border-pink-500/30 text-pink-300" : "bg-white/5 text-white/40"}`}>
+                            {label}
+                          </button>
+                          {activeVariant === idx ? (
+                            Array.isArray((script[key] as { slides?: Slide[] })?.slides) ?
+                              ((script[key] as { slides: Slide[] }).slides).map((s, i) => (
+                                <div key={i} className="flex items-start gap-2 p-2 bg-white/[0.03] rounded-xl mb-1">
+                                  <span className="text-pink-400/60 text-xs shrink-0">{s.duration}s</span>
+                                  <div>
+                                    <p className="text-white text-sm">{s.text}</p>
+                                    {s.subtext ? <p className="text-white/40 text-xs mt-0.5">{s.subtext}</p> : null}
+                                  </div>
+                                </div>
+                              )) : null
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : videoType === "citation" ? (
+                    Array.isArray(script.variants) && (script.variants as unknown[])[activeVariant] != null ? (
+                      <div className="p-3 bg-amber-500/8 border border-amber-500/15 rounded-xl space-y-1.5">
+                        {(script.variants as {style_name?:string}[])[activeVariant]?.style_name
+                          ? <p className="text-amber-400 text-xs font-semibold">{String((script.variants as {style_name?:string}[])[activeVariant]!.style_name)}</p>
+                          : null}
+                        <p className="text-white/50 text-xs italic">
+                          {String((script.variants as {intro:string}[])[activeVariant].intro)}
+                        </p>
+                        <p className="text-white font-medium text-sm">
+                          &quot;{String((script.variants as {quote:string}[])[activeVariant].quote)}&quot;
+                        </p>
+                        <p className="text-white/70 text-xs">
+                          {String((script.variants as {punchline:string}[])[activeVariant].punchline)}
+                        </p>
+                      </div>
+                    ) : null
+                  ) : videoType === "shorts" ? (
+                    <>
+                      {Array.isArray(script.hooks) ? (
+                        <div className="space-y-1.5 mb-2">
+                          <p className="text-white/40 text-xs font-semibold">Hooks viraux</p>
+                          {(script.hooks as string[]).map((h, i) => (
+                            <div key={i} className="flex gap-2 p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl">
+                              <span className="text-red-400/60 text-xs shrink-0">H{i+1}</span>
+                              <p className="text-white text-sm">{h}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {script.script ? (
+                        <div className="p-2.5 bg-white/[0.03] rounded-xl">
+                          <p className="text-white/40 text-xs mb-1">Script voix</p>
+                          <p className="text-white/70 text-xs leading-relaxed">{String(script.script).substring(0, 300)}{String(script.script).length > 300 ? "…" : ""}</p>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : videoType === "booktrailer" ? (
+                    <>
+                      {script.logline ? (
+                        <p className="text-cyan-300/70 text-xs italic px-1 mb-1">{String(script.logline)}</p>
+                      ) : null}
+                      {Array.isArray(script.scenes) ? (script.scenes as {id:number;text:string;duration:number;visual_cue?:string}[]).map(s => (
+                        <div key={s.id} className="p-2.5 bg-white/[0.03] rounded-xl">
+                          <p className="text-white/40 text-xs mb-1">Scène {s.id} · {s.duration}s</p>
+                          <p className="text-white text-sm">{s.text}</p>
+                          {s.visual_cue ? <p className="text-cyan-400/50 text-[10px] mt-0.5">🎬 {s.visual_cue}</p> : null}
+                        </div>
+                      )) : null}
+                      {script.music_vibe ? (
+                        <p className="text-purple-400/60 text-xs px-1">🎵 {String(script.music_vibe)}</p>
+                      ) : null}
+                    </>
+                  ) : null}
                 </div>
                 {videoCaption && (
                   <div className="pt-2 border-t border-white/[0.06]">
