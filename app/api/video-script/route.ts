@@ -8,10 +8,10 @@ export const maxDuration = 60;
 const HF_HOST    = "router.huggingface.co";
 const HF_PATH    = "/v1/chat/completions";
 
-// Cascade : 72B préféré → 7B fallback
+// Cascade : 7B d'abord (rapide ~10-20s), 72B en fallback (lent ~40-60s)
 const MODELS = [
-  "Qwen/Qwen2.5-72B-Instruct",
   "Qwen/Qwen2.5-7B-Instruct",
+  "Qwen/Qwen2.5-72B-Instruct",
 ];
 
 // Requête HTTPS via module natif Node.js (contourne fetch/polyfill Vercel)
@@ -51,7 +51,7 @@ async function callQwen(
         const res = await httpsPost(HF_HOST, HF_PATH, {
           Authorization: `Bearer ${hfToken}`,
           "Content-Type": "application/json",
-        }, body, 55_000);
+        }, body, 25_000); // 25s par modèle, 2 modèles = 50s < maxDuration 60s
 
         if (res.status === 503 || res.status === 429) {
           const wait = Math.min(parseInt(res.headers["retry-after"] || "10", 10) * 1000, 12_000);

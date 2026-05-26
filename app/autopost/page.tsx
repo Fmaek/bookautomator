@@ -653,7 +653,7 @@ export default function AutoPostPage() {
           price: (book as unknown as Record<string, unknown>).price as number | undefined,
           chapters: book.chapters,
         }),
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(90_000),
       });
       const data = await res.json() as Record<string, unknown>;
       if (!res.ok || data.error) {
