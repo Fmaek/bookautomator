@@ -48,6 +48,12 @@ const THEMES = [
   { id: "rose",   label: "Rose",   bg1: "#1a0010", bg2: "#2d0020", accent: "#ec4899" },
 ];
 
+const VISUAL_STYLES = [
+  { id: "cinema", label: "Cinéma Noir", emoji: "🎬", desc: "Bokeh · Particules · Letterbox" },
+  { id: "typo",   label: "Typographie", emoji: "✍️", desc: "Premium · Word reveal · Épuré" },
+  { id: "tiktok", label: "TikTok Viral", emoji: "📱", desc: "Bounce · Énergie · Progress bar" },
+];
+
 const PLATFORMS: { id: Platform; label: string; color: string; bg: string }[] = [
   { id: "instagram", label: "Instagram", color: "text-pink-400",  bg: "bg-pink-500/20 border-pink-500/30" },
   { id: "tiktok",    label: "TikTok",    color: "text-red-400",   bg: "bg-red-500/20 border-red-500/30" },
@@ -209,7 +215,8 @@ async function renderVideoToBlob(
   coverDataUrl?: string, videoType = "teaser", fps = 30,
   pexelsKey?: string,
   bookCategory?: string, bookTitle?: string,
-  onStage?: (stage: string) => void
+  onStage?: (stage: string) => void,
+  visualStyle = "cinema"
 ): Promise<Blob> {
   const W = fmt.w, H = fmt.h;
   const barH = Math.round(H * 0.075);
@@ -290,7 +297,8 @@ async function renderVideoToBlob(
 
   rec.start();
   let gFrame = 0;
-  const TRANS = Math.round(fps * 0.45); // frames de transition
+  const TRANS = Math.round(fps * 0.45);
+  const totalFrames = Math.round(totalSec * fps);
 
   for (const sl of slides) {
     const tf = Math.round(sl.duration * fps);
@@ -299,172 +307,250 @@ async function renderVideoToBlob(
       const fadeIn  = f < TRANS ? easeOut(f / TRANS) : 1;
       const fadeOut = f > tf - TRANS ? easeOut((tf - f) / TRANS) : 1;
       const fade = Math.min(fadeIn, fadeOut);
+      const isBig = ["big","title","climax","intro"].includes(sl.style);
+      const hasCover = !!cImg;
 
-      // ── Fond ──────────────────────────────────────────────────────────────
-      if (bgVideo && bgVideo.readyState >= 2) {
-        // Fond vidéo Pexels — crop center-fill
-        const vw = bgVideo.videoWidth || W, vh = bgVideo.videoHeight || H;
-        const scale = Math.max(W / vw, H / vh);
-        const dw = vw * scale, dh = vh * scale;
-        ctx.drawImage(bgVideo, (W - dw) / 2, (H - dh) / 2, dw, dh);
-        // Overlay couleur du thème (50% opacité pour garder identité)
-        const bg2 = ctx.createLinearGradient(0, 0, W*0.6, H);
-        bg2.addColorStop(0, thm.bg1 + "99"); bg2.addColorStop(1, thm.bg2 + "bb");
-        ctx.fillStyle = bg2; ctx.fillRect(0, 0, W, H);
-      } else {
-        // ── Fond cinématique animé (gradient multicouche + bokeh) ──────────
-        const t01 = gFrame / Math.max(1, slides.reduce((s,sl)=>s+sl.duration,0) * fps);
-        // Fond base
-        const bg = ctx.createLinearGradient(0, 0, W, H);
-        bg.addColorStop(0, thm.bg1); bg.addColorStop(1, thm.bg2);
-        ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-        // Lueur principale qui pulse doucement
-        const pulseR = W * (0.55 + 0.08 * Math.sin(gFrame * 0.018));
-        const glowY = H * (0.38 + 0.06 * Math.sin(gFrame * 0.011));
-        const glow = ctx.createRadialGradient(W/2, glowY, 0, W/2, glowY, pulseR);
-        glow.addColorStop(0, thm.accent + "28"); glow.addColorStop(0.5, thm.accent + "0e"); glow.addColorStop(1, "transparent");
-        ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
-        // Deuxième lueur décalée
-        const glow2 = ctx.createRadialGradient(W*0.8, H*0.7, 0, W*0.8, H*0.7, W*0.45);
-        glow2.addColorStop(0, thm.bg2 + "cc"); glow2.addColorStop(1, "transparent");
-        ctx.fillStyle = glow2; ctx.fillRect(0, 0, W, H);
-        // Bokeh — cercles flous animés
-        for (let i = 0; i < 18; i++) {
-          const bx = ((i * 137.5 + gFrame * 0.12) % W);
-          const by = ((i * 97.3  + gFrame * 0.08) % H);
-          const br = 8 + (i % 5) * 14;
-          const ba = 0.04 + 0.04 * Math.abs(Math.sin(gFrame * 0.022 + i));
-          const bg3 = ctx.createRadialGradient(bx, by, 0, bx, by, br);
-          bg3.addColorStop(0, thm.accent + Math.round(ba * 255).toString(16).padStart(2, "0"));
-          bg3.addColorStop(1, "transparent");
-          ctx.fillStyle = bg3; ctx.fillRect(bx-br, by-br, br*2, br*2);
-        }
-        // Lignes horizontales subtiles (scanlines cinéma)
-        ctx.globalAlpha = 0.03;
-        for (let y = 0; y < H; y += 4) {
-          ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 2);
-        }
-        ctx.globalAlpha = 1;
-        // Dégradé bas (shadow pour texte)
-        const shadowGrad = ctx.createLinearGradient(0, H*0.55, 0, H);
-        shadowGrad.addColorStop(0, "transparent"); shadowGrad.addColorStop(1, "rgba(0,0,0,0.55)");
-        ctx.fillStyle = shadowGrad; ctx.fillRect(0, H*0.55, W, H*0.45);
-        // Ligne de lumière en haut
-        ctx.globalAlpha = 0.12 + 0.06 * Math.sin(gFrame * 0.025);
-        const topLine = ctx.createLinearGradient(0, 0, W, 0);
-        topLine.addColorStop(0, "transparent"); topLine.addColorStop(0.5, thm.accent); topLine.addColorStop(1, "transparent");
-        ctx.fillStyle = topLine; ctx.fillRect(0, 0, W, 1.5);
-        ctx.globalAlpha = 1;
-        // Étoiles/particules fines (constellation)
-        for (let i = 0; i < 55; i++) {
-          const sx = (i * 233.7 + t01 * 8) % W;
-          const sy = (i * 151.3) % H;
-          const sa = (0.15 + 0.25 * Math.abs(Math.sin(gFrame * 0.03 + i))) * (1 - i/80);
-          const sr = 0.4 + (i%4) * 0.35;
-          ctx.globalAlpha = sa; ctx.fillStyle = "#fff";
-          ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI*2); ctx.fill();
-        }
-        ctx.globalAlpha = 1;
-      }
-
-      drawParticles(ctx, W, H, thm.accent, gFrame);
-
-      // ── Couverture avec Ken Burns ─────────────────────────────────────────
-      if (cImg) {
-        const bigStyle = ["title","intro","big","climax"].includes(sl.style);
-        const maxW = bigStyle ? W * 0.50 : W * 0.26;
-        const aspect = cImg.naturalHeight / Math.max(1, cImg.naturalWidth);
-        const cW = maxW, cH = cW * aspect;
-        const cX = bigStyle ? (W - cW) / 2 : W * 0.70;
-        const cY = bigStyle ? H * 0.10 : H * 0.16;
-        // Ken Burns: zoom lent
-        const zoom = 1 + 0.065 * easeInOut(p);
-        const zW = cW*zoom, zH = cH*zoom;
-        ctx.globalAlpha = fade * 0.92;
-        ctx.shadowColor = thm.accent; ctx.shadowBlur = 36 * fade;
-        ctx.drawImage(cImg, cX-(zW-cW)/2, cY-(zH-cH)/2, zW, zH);
-        ctx.shadowBlur = 0; ctx.globalAlpha = 1;
-      }
-
-      // ── Effets post-process ───────────────────────────────────────────────
-      drawGrain(ctx, W, H);
-      drawVignette(ctx, W, H);
-
-      // ── Ligne accent ──────────────────────────────────────────────────────
-      const hasBigCover = cImg && ["title","intro","big"].includes(sl.style);
-      const lineY = hasBigCover ? H * 0.70 : H * 0.09;
-      drawAccentLine(ctx, W, lineY, p, thm.accent);
-
-      // ── Texte ─────────────────────────────────────────────────────────────
-      const textCenterY = hasBigCover ? H * 0.77 : H * 0.50;
-      ctx.globalAlpha = fade;
-
-      if (sl.style === "cta") {
-        const ph = Math.round(H * 0.075), pw = W * 0.80;
-        const px = (W-pw)/2, py = textCenterY - ph/2;
-        ctx.globalAlpha = fade * 0.95;
-        ctx.shadowColor = thm.accent; ctx.shadowBlur = 28 * fade;
-        ctx.fillStyle = thm.accent;
-        ctx.beginPath(); ctx.roundRect(px, py, pw, ph, ph/2); ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.round(W*0.041)}px system-ui`;
-        ctx.textAlign = "center"; ctx.globalAlpha = fade;
-        ctx.fillText(sl.text.substring(0,55), W/2, py + ph*0.66);
-      } else {
-        const isBig = ["big","title","climax","intro"].includes(sl.style);
-        const fs = isBig ? W * 0.078 : W * 0.055;
-        // Reveal progressif des mots
-        const words = sl.text.split(" ");
-        const shown = Math.max(1, Math.ceil(words.length * Math.min(1, p * 2.6)));
-        const visText = words.slice(0, shown).join(" ");
-        ctx.font = `bold ${Math.round(fs)}px system-ui`; ctx.textAlign = "center";
-        const lines = wrapText(ctx, visText || " ", W * 0.86);
-        const lh = fs * 1.42;
-        const sy = textCenterY - (lines.length * lh) / 2;
-
-        lines.forEach((ln, li) => {
-          const wordFade = shown >= words.length ? 1 : (li < lines.length - 1 ? 1 : Math.min(1, (p*2.6 - Math.floor(p*2.6*0.9))));
-          ctx.globalAlpha = fade * Math.max(0.18, wordFade);
-          const offY = (1 - fadeIn) * H * 0.03;
-          const lx = W/2, ly = sy + li*lh + offY;
-          if (isBig) {
-            // Ombre de profondeur
-            ctx.shadowColor = "rgba(0,0,0,0.85)"; ctx.shadowBlur = 10;
-            ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillText(ln, lx+2, ly+2);
-            ctx.shadowBlur = 0;
-            // Halo accent
-            ctx.shadowColor = thm.accent; ctx.shadowBlur = 32 * fade;
-            ctx.fillStyle = thm.accent; ctx.fillText(ln, lx, ly);
-            ctx.shadowBlur = 0;
-          } else {
-            ctx.shadowColor = "rgba(0,0,0,0.9)"; ctx.shadowBlur = 7;
-            ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillText(ln, lx+1.5, ly+1.5);
-            ctx.shadowBlur = 0;
-            ctx.fillStyle = "#ffffff"; ctx.fillText(ln, lx, ly);
+      // ════════════════════════════════════════════════════════════════════
+      // STYLE A — CINÉMA NOIR
+      // ════════════════════════════════════════════════════════════════════
+      if (visualStyle === "cinema") {
+        if (bgVideo && bgVideo.readyState >= 2) {
+          const vw = bgVideo.videoWidth || W, vh = bgVideo.videoHeight || H;
+          const scale = Math.max(W/vw, H/vh);
+          const dw = vw*scale, dh = vh*scale;
+          ctx.drawImage(bgVideo, (W-dw)/2, (H-dh)/2, dw, dh);
+          const ov = ctx.createLinearGradient(0,0,W*0.6,H);
+          ov.addColorStop(0, thm.bg1+"99"); ov.addColorStop(1, thm.bg2+"bb");
+          ctx.fillStyle = ov; ctx.fillRect(0,0,W,H);
+        } else {
+          const t01 = gFrame / Math.max(1, totalFrames);
+          const bg = ctx.createLinearGradient(0,0,W,H);
+          bg.addColorStop(0, thm.bg1); bg.addColorStop(1, thm.bg2);
+          ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+          const pulseR = W*(0.55+0.08*Math.sin(gFrame*0.018));
+          const glowY = H*(0.38+0.06*Math.sin(gFrame*0.011));
+          const glow = ctx.createRadialGradient(W/2,glowY,0,W/2,glowY,pulseR);
+          glow.addColorStop(0, thm.accent+"28"); glow.addColorStop(0.5, thm.accent+"0e"); glow.addColorStop(1,"transparent");
+          ctx.fillStyle = glow; ctx.fillRect(0,0,W,H);
+          const glow2 = ctx.createRadialGradient(W*0.8,H*0.7,0,W*0.8,H*0.7,W*0.45);
+          glow2.addColorStop(0, thm.bg2+"cc"); glow2.addColorStop(1,"transparent");
+          ctx.fillStyle = glow2; ctx.fillRect(0,0,W,H);
+          for (let i=0;i<18;i++){
+            const bx=((i*137.5+gFrame*0.12)%W), by=((i*97.3+gFrame*0.08)%H), br=8+(i%5)*14;
+            const ba=0.04+0.04*Math.abs(Math.sin(gFrame*0.022+i));
+            const bg3=ctx.createRadialGradient(bx,by,0,bx,by,br);
+            bg3.addColorStop(0, thm.accent+Math.round(ba*255).toString(16).padStart(2,"0")); bg3.addColorStop(1,"transparent");
+            ctx.fillStyle=bg3; ctx.fillRect(bx-br,by-br,br*2,br*2);
           }
-        });
-
-        if (sl.subtext && p > 0.32) {
-          ctx.font = `${Math.round(W*0.033)}px system-ui`;
-          ctx.globalAlpha = fade * Math.min(1, (p-0.32)/0.22);
-          ctx.shadowColor = "rgba(0,0,0,0.7)"; ctx.shadowBlur = 4;
-          ctx.fillStyle = "rgba(255,255,255,0.62)";
-          wrapText(ctx, sl.subtext, W*0.80).forEach((l, i) =>
-            ctx.fillText(l, W/2, sy + lines.length*lh + W*0.040*(i+1))
-          );
-          ctx.shadowBlur = 0;
+          ctx.globalAlpha=0.03; for(let y=0;y<H;y+=4){ctx.fillStyle="#000";ctx.fillRect(0,y,W,2);} ctx.globalAlpha=1;
+          const sg=ctx.createLinearGradient(0,H*0.55,0,H); sg.addColorStop(0,"transparent"); sg.addColorStop(1,"rgba(0,0,0,0.55)");
+          ctx.fillStyle=sg; ctx.fillRect(0,H*0.55,W,H*0.45);
+          ctx.globalAlpha=0.12+0.06*Math.sin(gFrame*0.025);
+          const tl=ctx.createLinearGradient(0,0,W,0); tl.addColorStop(0,"transparent"); tl.addColorStop(0.5,thm.accent); tl.addColorStop(1,"transparent");
+          ctx.fillStyle=tl; ctx.fillRect(0,0,W,1.5); ctx.globalAlpha=1;
+          for(let i=0;i<55;i++){
+            const sx=(i*233.7+t01*8)%W, sy=(i*151.3)%H;
+            const sa=(0.15+0.25*Math.abs(Math.sin(gFrame*0.03+i)))*(1-i/80);
+            ctx.globalAlpha=sa; ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(sx,sy,0.4+(i%4)*0.35,0,Math.PI*2); ctx.fill();
+          }
+          ctx.globalAlpha=1;
         }
+        drawParticles(ctx,W,H,thm.accent,gFrame);
+        if (cImg){
+          const bigCover=["title","intro","big","climax"].includes(sl.style);
+          const maxCW=bigCover?W*0.50:W*0.26, asp=cImg.naturalHeight/Math.max(1,cImg.naturalWidth);
+          const cW=maxCW, cH=cW*asp, cX=bigCover?(W-cW)/2:W*0.70, cY=bigCover?H*0.10:H*0.16;
+          const zoom=1+0.065*easeInOut(p); const zW=cW*zoom, zH=cH*zoom;
+          ctx.globalAlpha=fade*0.92; ctx.shadowColor=thm.accent; ctx.shadowBlur=36*fade;
+          ctx.drawImage(cImg,cX-(zW-cW)/2,cY-(zH-cH)/2,zW,zH);
+          ctx.shadowBlur=0; ctx.globalAlpha=1;
+        }
+        drawGrain(ctx,W,H); drawVignette(ctx,W,H);
+        const hasBigCover=hasCover&&["title","intro","big"].includes(sl.style);
+        drawAccentLine(ctx,W,hasBigCover?H*0.70:H*0.09,p,thm.accent);
+        const tcY=hasBigCover?H*0.77:H*0.50;
+        ctx.globalAlpha=fade;
+        if (sl.style==="cta"){
+          const ph=Math.round(H*0.075),pw=W*0.80,px=(W-pw)/2,py=tcY-ph/2;
+          ctx.shadowColor=thm.accent; ctx.shadowBlur=28*fade; ctx.fillStyle=thm.accent;
+          ctx.beginPath(); ctx.roundRect(px,py,pw,ph,ph/2); ctx.fill();
+          ctx.shadowBlur=0; ctx.fillStyle="#fff"; ctx.font=`bold ${Math.round(W*0.041)}px system-ui`; ctx.textAlign="center";
+          ctx.fillText(sl.text.substring(0,55),W/2,py+ph*0.66);
+        } else {
+          const fs=isBig?W*0.078:W*0.055;
+          const words=sl.text.split(" "); const shown=Math.max(1,Math.ceil(words.length*Math.min(1,p*2.6)));
+          ctx.font=`bold ${Math.round(fs)}px system-ui`; ctx.textAlign="center";
+          const lines=wrapText(ctx,words.slice(0,shown).join(" ")||" ",W*0.86);
+          const lh=fs*1.42; const sy2=tcY-(lines.length*lh)/2;
+          lines.forEach((ln,li)=>{
+            ctx.globalAlpha=fade*Math.max(0.18, shown>=words.length?1:(li<lines.length-1?1:Math.min(1,(p*2.6-Math.floor(p*2.6*0.9)))));
+            const ly=sy2+li*lh+(1-fadeIn)*H*0.03;
+            if(isBig){ctx.shadowColor="rgba(0,0,0,0.85)";ctx.shadowBlur=10;ctx.fillStyle="rgba(0,0,0,0.35)";ctx.fillText(ln,W/2+2,ly+2);ctx.shadowBlur=0;ctx.shadowColor=thm.accent;ctx.shadowBlur=32*fade;ctx.fillStyle=thm.accent;ctx.fillText(ln,W/2,ly);ctx.shadowBlur=0;}
+            else{ctx.shadowColor="rgba(0,0,0,0.9)";ctx.shadowBlur=7;ctx.fillStyle="rgba(0,0,0,0.35)";ctx.fillText(ln,W/2+1.5,ly+1.5);ctx.shadowBlur=0;ctx.fillStyle="#fff";ctx.fillText(ln,W/2,ly);}
+          });
+          if(sl.subtext&&p>0.32){ctx.font=`${Math.round(W*0.033)}px system-ui`;ctx.globalAlpha=fade*Math.min(1,(p-0.32)/0.22);ctx.shadowColor="rgba(0,0,0,0.7)";ctx.shadowBlur=4;ctx.fillStyle="rgba(255,255,255,0.62)";wrapText(ctx,sl.subtext,W*0.80).forEach((l,i)=>ctx.fillText(l,W/2,sy2+lines.length*lh+W*0.040*(i+1)));ctx.shadowBlur=0;}
+        }
+        ctx.globalAlpha=1;
+        drawLetterbox(ctx,W,H,barH);
+        if(fade<0.98){ctx.globalAlpha=(1-fade)*0.92;ctx.fillStyle="#000";ctx.fillRect(0,0,W,H);ctx.globalAlpha=1;}
       }
-      ctx.globalAlpha = 1;
 
-      // ── Letterbox ─────────────────────────────────────────────────────────
-      drawLetterbox(ctx, W, H, barH);
+      // ════════════════════════════════════════════════════════════════════
+      // STYLE B — TYPOGRAPHIE PREMIUM
+      // ════════════════════════════════════════════════════════════════════
+      else if (visualStyle === "typo") {
+        // Fond : dégradé propre + cercle accent
+        const bg = ctx.createLinearGradient(0,0,0,H);
+        bg.addColorStop(0, thm.bg1); bg.addColorStop(1, thm.bg2);
+        ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+        // Grand cercle accent (flou simulé par radialGradient)
+        const cr = ctx.createRadialGradient(W*0.85,H*0.85,0,W*0.85,H*0.85,W*0.75);
+        cr.addColorStop(0, thm.accent+"22"); cr.addColorStop(1,"transparent");
+        ctx.fillStyle=cr; ctx.fillRect(0,0,W,H);
+        // Lignes horizontales fines (grille premium)
+        ctx.globalAlpha=0.05;
+        for(let y=0;y<H;y+=80){ctx.fillStyle=thm.accent;ctx.fillRect(0,y,W,0.5);}
+        ctx.globalAlpha=1;
+        // Diagonale lumineuse en haut à droite
+        ctx.save(); ctx.globalAlpha=0.06+0.03*Math.sin(gFrame*0.02);
+        ctx.translate(W,0); ctx.rotate(Math.PI/4);
+        const diagG=ctx.createLinearGradient(0,0,0,W*0.8);
+        diagG.addColorStop(0,thm.accent); diagG.addColorStop(1,"transparent");
+        ctx.fillStyle=diagG; ctx.fillRect(-4,0,8,W*0.8); ctx.restore(); ctx.globalAlpha=1;
 
-      // ── Fondu noir de transition ───────────────────────────────────────────
-      if (fade < 0.98) {
-        ctx.globalAlpha = (1 - fade) * 0.92;
-        ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
-        ctx.globalAlpha = 1;
+        // Couverture côté (petit, à gauche)
+        if(cImg){
+          const cH2=H*0.28, cW2=cH2*(cImg.naturalWidth/Math.max(1,cImg.naturalHeight));
+          const zoom=1+0.04*easeInOut(p);
+          ctx.globalAlpha=fade*0.85; ctx.shadowColor=thm.accent; ctx.shadowBlur=20*fade;
+          ctx.drawImage(cImg,W*0.06,H*0.5-cH2/2,cW2*zoom,cH2*zoom);
+          ctx.shadowBlur=0; ctx.globalAlpha=1;
+        }
+
+        // Texte : reveal mot par mot avec slide-up
+        const textX = hasCover ? W*0.55 : W*0.5;
+        const textMaxW = hasCover ? W*0.80 : W*0.88;
+        const fs2 = isBig ? W*0.085 : W*0.058;
+        const words2=sl.text.split(" "); const shown2=Math.max(1,Math.ceil(words2.length*Math.min(1,p*3)));
+        ctx.font=`900 ${Math.round(fs2)}px system-ui`; ctx.textAlign = hasCover ? "left" : "center";
+        const lines2=wrapText(ctx,words2.slice(0,shown2).join(" ")||" ",textMaxW);
+        const lh2=fs2*1.35; const sy3=(H-lines2.length*lh2)/2;
+
+        // Ligne accent qui se dessine (sweep horizontal)
+        const lineProgress = Math.min(1, p * 2);
+        const lineW2 = textMaxW * 0.55 * easeOut(lineProgress);
+        const lineX2 = hasCover ? W*0.06+lineW2*0.05 : (W-lineW2)/2;
+        ctx.globalAlpha=0.9*fade; ctx.fillStyle=thm.accent;
+        ctx.fillRect(hasCover?W*0.06:lineX2, sy3-fs2*0.6, lineW2, 3);
+        ctx.globalAlpha=1;
+
+        if(sl.style==="cta"){
+          const ph=Math.round(H*0.08), pw=Math.min(textMaxW,W*0.82), px2=hasCover?W*0.06:(W-pw)/2, py2=H/2-ph/2;
+          ctx.globalAlpha=fade; ctx.fillStyle=thm.accent;
+          ctx.beginPath(); ctx.roundRect(px2,py2,pw,ph,8); ctx.fill();
+          ctx.fillStyle="#fff"; ctx.font=`bold ${Math.round(W*0.044)}px system-ui`;
+          ctx.textAlign="center"; ctx.fillText(sl.text.substring(0,50),px2+pw/2,py2+ph*0.67);
+        } else {
+          lines2.forEach((ln,li)=>{
+            const wordAnim = li < lines2.length-1 ? 1 : Math.min(1, p*3 - Math.floor(p*3*(lines2.length-1)/lines2.length));
+            const offY2 = (1-Math.min(1,wordAnim*2)) * H*0.04;
+            ctx.globalAlpha=fade*Math.max(0,wordAnim);
+            const lx2=hasCover?W*0.06:W/2, ly2=sy3+li*lh2+offY2;
+            // Ombre portée
+            ctx.shadowColor="rgba(0,0,0,0.6)"; ctx.shadowBlur=8;
+            ctx.fillStyle="rgba(0,0,0,0.3)"; ctx.fillText(ln,lx2+(hasCover?2:2),ly2+2);
+            ctx.shadowBlur=0;
+            // Texte blanc principal (big = accent color)
+            ctx.fillStyle=isBig?thm.accent:"#ffffff"; ctx.fillText(ln,lx2,ly2);
+          });
+          if(sl.subtext&&p>0.4){
+            ctx.font=`300 ${Math.round(W*0.032)}px system-ui`; ctx.textAlign=hasCover?"left":"center";
+            ctx.globalAlpha=fade*Math.min(1,(p-0.4)/0.25); ctx.fillStyle="rgba(255,255,255,0.55)";
+            wrapText(ctx,sl.subtext,textMaxW).forEach((l,i)=>ctx.fillText(l,hasCover?W*0.06:W/2,sy3+lines2.length*lh2+lh2*0.85*(i+1)));
+          }
+        }
+        ctx.globalAlpha=1;
+        // Fondu entre slides (propre, pas noir total)
+        if(fade<0.98){ctx.globalAlpha=(1-fade)*0.7;ctx.fillStyle=thm.bg1;ctx.fillRect(0,0,W,H);ctx.globalAlpha=1;}
+      }
+
+      // ════════════════════════════════════════════════════════════════════
+      // STYLE C — TIKTOK VIRAL
+      // ════════════════════════════════════════════════════════════════════
+      else {
+        // Fond : solid + diagonales énergétiques
+        ctx.fillStyle=thm.bg1; ctx.fillRect(0,0,W,H);
+        // Rayons diagonaux animés
+        ctx.save(); ctx.translate(W/2,H/2); ctx.rotate(Math.PI*0.22);
+        ctx.globalAlpha=0.05+0.02*Math.sin(gFrame*0.04);
+        for(let i=-10;i<10;i++){
+          ctx.fillStyle=thm.accent; ctx.fillRect(i*55+(gFrame*0.4%55),-(H), 28, H*2.5);
+        }
+        ctx.restore(); ctx.globalAlpha=1;
+        // Overlay dégradé du bas (assombrit pour lire le texte)
+        const ttkGrad=ctx.createLinearGradient(0,H*0.3,0,H);
+        ttkGrad.addColorStop(0,"transparent"); ttkGrad.addColorStop(1,thm.bg2+"ee");
+        ctx.fillStyle=ttkGrad; ctx.fillRect(0,H*0.3,W,H*0.7);
+        // Cercle décoratif accent (haut)
+        ctx.globalAlpha=0.15+0.05*Math.sin(gFrame*0.03);
+        const circG=ctx.createRadialGradient(W*0.5,H*0.25,0,W*0.5,H*0.25,W*0.4);
+        circG.addColorStop(0,thm.accent); circG.addColorStop(1,"transparent");
+        ctx.fillStyle=circG; ctx.fillRect(0,0,W,H*0.5);
+        ctx.globalAlpha=1;
+
+        // Couverture centrée en haut
+        if(cImg){
+          const cH3=H*0.30, cW3=cH3*(cImg.naturalWidth/Math.max(1,cImg.naturalHeight));
+          const bounce3=f<8?1+0.12*Math.sin(f*Math.PI/8):1;
+          ctx.save(); ctx.translate(W/2,H*0.22); ctx.scale(bounce3*fade,bounce3*fade);
+          ctx.shadowColor=thm.accent; ctx.shadowBlur=24*fade;
+          ctx.drawImage(cImg,-cW3/2,-cH3/2,cW3,cH3);
+          ctx.shadowBlur=0; ctx.restore(); ctx.globalAlpha=1;
+        }
+
+        // Texte : bounce + scale in
+        const fs3=isBig?W*0.092:W*0.064;
+        const textY3=hasCover?H*0.67:H*0.50;
+        const bounceScale = f < 12 ? (0.5 + 0.5*easeOut(f/12)) : 1;
+        ctx.save(); ctx.translate(W/2,textY3); ctx.scale(bounceScale,bounceScale); ctx.translate(-W/2,-textY3);
+        ctx.font=`900 ${Math.round(fs3)}px system-ui`; ctx.textAlign="center";
+        if(sl.style==="cta"){
+          ctx.globalAlpha=fade;
+          const ph=Math.round(H*0.085), pw=W*0.85, px3=(W-pw)/2, py3=textY3-ph/2;
+          ctx.fillStyle=thm.accent; ctx.beginPath(); ctx.roundRect(px3,py3,pw,ph,ph/2); ctx.fill();
+          ctx.fillStyle="#000"; ctx.font=`900 ${Math.round(W*0.046)}px system-ui`;
+          ctx.fillText(sl.text.substring(0,50),W/2,py3+ph*0.68);
+        } else {
+          const lines3=wrapText(ctx,sl.text||" ",W*0.88);
+          const lh3=fs3*1.28; const sy4=textY3-(lines3.length*lh3)/2;
+          lines3.forEach((ln,li)=>{
+            ctx.globalAlpha=fade;
+            const ly3=sy4+li*lh3;
+            // Outline noir (lisibilité)
+            ctx.lineWidth=Math.round(fs3*0.08); ctx.strokeStyle="#000"; ctx.strokeText(ln,W/2,ly3);
+            // Texte : big = accent, normal = blanc
+            ctx.fillStyle=isBig?thm.accent:"#ffffff"; ctx.fillText(ln,W/2,ly3);
+          });
+          if(sl.subtext&&p>0.35){
+            ctx.font=`700 ${Math.round(W*0.038)}px system-ui`;
+            ctx.globalAlpha=fade*Math.min(1,(p-0.35)/0.2);
+            ctx.lineWidth=Math.round(W*0.038*0.06); ctx.strokeStyle="#000";
+            wrapText(ctx,sl.subtext,W*0.82).forEach((l,i)=>{
+              const ly4=sy4+(ctx.font?0:0)+((sl.text.split(" ").length>4?2:1)*lh3)+lh3*0.9*(i+1);
+              ctx.strokeText(l,W/2,ly4); ctx.fillStyle="rgba(255,255,255,0.8)"; ctx.fillText(l,W/2,ly4);
+            });
+          }
+        }
+        ctx.restore(); ctx.globalAlpha=1;
+
+        // Progress bar (TikTok style)
+        const totalProg = gFrame / Math.max(1, totalFrames);
+        ctx.fillStyle = "rgba(255,255,255,0.15)"; ctx.fillRect(0, H-5, W, 5);
+        ctx.fillStyle = thm.accent; ctx.globalAlpha=0.9;
+        ctx.fillRect(0, H-5, W*totalProg, 5);
+        ctx.globalAlpha=1;
+        // Cuts secs (pas de fondu — juste flash blanc au changement de slide)
+        if(f<3&&gFrame>fps*0.5){ctx.globalAlpha=(1-f/3)*0.4;ctx.fillStyle="#fff";ctx.fillRect(0,0,W,H);ctx.globalAlpha=1;}
       }
 
       await new Promise(r => setTimeout(r, 1000 / fps));
@@ -491,6 +577,7 @@ export default function AutoPostPage() {
   const [videoType, setVideoType] = useState("teaser");
   const [videoFormat, setVideoFormat] = useState("portrait");
   const [videoTheme, setVideoTheme] = useState("dark");
+  const [visualStyle, setVisualStyle] = useState("cinema");
   const [generating, setGenerating] = useState(false);
   const [scriptError, setScriptError] = useState<string | null>(null);
   const [script, setScript] = useState<Record<string, unknown> | null>(null);
@@ -771,7 +858,8 @@ export default function AutoPostPage() {
     const blob = await renderVideoToBlob(
       slides, fmt, thm, book?.coverDataUrl, videoType, 30,
       creds.pexelsKey || undefined,
-      book?.category, book?.title, (stage) => setRenderStage(stage)
+      book?.category, book?.title, (stage) => setRenderStage(stage),
+      visualStyle
     );
     clearInterval(t);
     return URL.createObjectURL(blob);
@@ -1063,6 +1151,21 @@ export default function AutoPostPage() {
               </div>
               <div className="grid grid-cols-3 gap-1.5">
                 {THEMES.map(t => <button key={t.id} onClick={() => setVideoTheme(t.id)} className={`flex flex-col items-center gap-1 p-1.5 rounded-lg border transition-all ${videoTheme === t.id ? "border-violet-500/50" : "border-white/[0.05]"}`}><div className="w-full h-5 rounded" style={{ background: `linear-gradient(135deg, ${t.bg1}, ${t.bg2})`, border: `1.5px solid ${t.accent}50` }} /><span className="text-xs text-white/40">{t.label}</span></button>)}
+              </div>
+
+              {/* ── Style visuel ─────────────────────────────────────────── */}
+              <div>
+                <p className="text-white/40 text-xs mb-1.5 font-medium">Style visuel</p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {VISUAL_STYLES.map(vs => (
+                    <button key={vs.id} onClick={() => setVisualStyle(vs.id)}
+                      className={`flex flex-col items-center gap-1 p-2 rounded-xl border text-center transition-all ${visualStyle === vs.id ? "border-violet-500/60 bg-violet-500/10" : "border-white/[0.06] hover:border-white/20"}`}>
+                      <span className="text-lg leading-none">{vs.emoji}</span>
+                      <span className={`text-xs font-semibold ${visualStyle === vs.id ? "text-white" : "text-white/50"}`}>{vs.label}</span>
+                      <span className="text-[10px] text-white/25 leading-tight">{vs.desc}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* ── Fond IA ─────────────────────────────────────────────── */}
