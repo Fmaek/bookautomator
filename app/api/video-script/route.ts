@@ -1,18 +1,71 @@
 import { NextRequest, NextResponse } from "next/server";
-import Groq from "groq-sdk";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const MODEL = "llama-3.3-70b-versatile";
+// ── HuggingFace Inference Providers (Qwen2.5-72B via Together/Nebius/etc.) ────
+const HF_API = "https://api-inference.huggingface.co/v1/chat/completions";
+const MODEL  = "Qwen/Qwen2.5-72B-Instruct";
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
-function extractJson(raw: string): string {
-  const clean = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-  const arr = clean.match(/\[[\s\S]*\]/);
-  if (arr) return arr[0];
-  const obj = clean.match(/\{[\s\S]*\}/);
-  return obj ? obj[0] : "{}";
+async function callQwen(
+  hfToken: string,
+  messages: { role: "system" | "user" | "assistant"; content: string }[],
+  maxTokens = 1800,
+  temperature = 0.90
+): Promise<string> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(HF_API, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${hfToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages,
+        max_tokens: maxTokens,
+        temperature,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(90_000),
+    });
+
+    if (res.status === 503 || res.status === 429) {
+      const wait = parseInt(res.headers.get("retry-after") || "15", 10) * 1000;
+      await new Promise(r => setTimeout(r, Math.min(wait, 20_000)));
+      continue;
+    }
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`HuggingFace ${res.status}: ${err.substring(0, 300)}`);
+    }
+    const data = await res.json() as { choices: { message: { content: string } }[] };
+    return data.choices[0]?.message?.content ?? "";
+  }
+  throw new Error("Qwen indisponible après 3 tentatives — réessaie dans quelques secondes.");
 }
 
+// ── Extraction JSON robuste ────────────────────────────────────────────────────
+function extractJson(raw: string): string {
+  // Retire les blocs markdown
+  let clean = raw.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+  // Essaie tableau d'abord, puis objet
+  const arr = clean.match(/\[[\s\S]*\]/);
+  if (arr) { try { JSON.parse(arr[0]); return arr[0]; } catch { /* continue */ } }
+  const obj = clean.match(/\{[\s\S]*\}/);
+  if (obj) { try { JSON.parse(obj[0]); return obj[0]; } catch {
+    // Tente réparations courantes : virgules traînantes, clés non quotées
+    const fixed = obj[0]
+      .replace(/,\s*([}\]])/g, "$1")       // virgule trailing
+      .replace(/(['"])?(\w+)(['"])?\s*:/g, '"$2":'); // clés en string
+    try { JSON.parse(fixed); return fixed; } catch { /* abandon */ }
+  }}
+  return "{}";
+}
+
+async function parseJson(raw: string): Promise<Record<string, unknown>> {
+  try { return JSON.parse(extractJson(raw)); }
+  catch { return {}; }
+}
+
+// ── Contexte livre ────────────────────────────────────────────────────────────
 function buildBookContext(b: {
   bookTitle: string; category?: string; description?: string;
   targetAudience?: string; chapters?: { title: string; content?: string }[];
@@ -20,348 +73,142 @@ function buildBookContext(b: {
 }) {
   const excerpts = (b.chapters || [])
     .slice(0, 3)
-    .map((c, i) => `Chapitre ${i+1} "${c.title}": ${(c.content || "").substring(0, 250)}`)
-    .filter(Boolean)
-    .join("\n");
-
+    .map((c, i) => `Chapitre ${i + 1} "${c.title}": ${(c.content || "").substring(0, 250)}`)
+    .filter(Boolean).join("\n");
   const chapterTitles = (b.chapters || []).slice(0, 6).map(c => `"${c.title}"`).join(", ");
-
   return `
 LIVRE: "${b.bookTitle}"
 CATÉGORIE: ${b.category || "Non-fiction"}
 ${b.description ? `RÉSUMÉ: ${b.description.substring(0, 400)}` : ""}
-${b.targetAudience ? `AUDIENCE CIBLE: ${b.targetAudience}` : ""}
+${b.targetAudience ? `AUDIENCE: ${b.targetAudience}` : ""}
 ${b.themes ? `THÈMES: ${b.themes}` : ""}
 ${chapterTitles ? `CHAPITRES: ${chapterTitles}` : ""}
-${excerpts ? `EXTRAITS:\n${excerpts}` : ""}
-`.trim();
+${excerpts ? `EXTRAITS:\n${excerpts}` : ""}`.trim();
 }
 
-// ── Déclencheurs émotionnels par catégorie ────────────────────────────────────
 const EMOTIONAL_TRIGGERS: Record<string, string> = {
   "développement personnel": "désir de croissance, peur de stagner, aspiration au meilleur soi",
-  "self-help":              "désir de croissance, peur de stagner, aspiration au meilleur soi",
-  "business":               "peur de l'échec financier, désir de liberté, ambition de réussite",
-  "finance":                "peur de manquer d'argent, désir de richesse, sécurité future",
-  "romance":                "désir d'amour, peur de la solitude, nostalgie, évasion",
-  "thriller":               "suspense, curiosité morbide, adrénaline, besoin de résolution",
-  "fantasy":                "évasion, émerveillement, héroïsme, monde alternatif",
-  "sci-fi":                 "curiosité intellectuelle, futur, survie, identité humaine",
-  "spiritualité":           "sens de la vie, paix intérieure, connexion, transformation",
-  "santé":                  "peur de la maladie, désir de vitalité, longévité",
-  "histoire":               "curiosité, identité culturelle, leçons du passé, fascinant",
-  "policier":               "suspense, justice, mystère, tension narrative",
-  "cuisine":                "plaisir sensoriel, créativité, partage, fierté culinaire",
-  "jeunesse":               "aventure, identité, amitié, découverte de soi",
+  "self-help":               "désir de croissance, peur de stagner, aspiration au meilleur soi",
+  "business":                "peur de l'échec financier, désir de liberté, ambition de réussite",
+  "finance":                 "peur de manquer d'argent, désir de richesse, sécurité future",
+  "romance":                 "désir d'amour, peur de la solitude, nostalgie, évasion",
+  "thriller":                "suspense, curiosité morbide, adrénaline, besoin de résolution",
+  "fantasy":                 "évasion, émerveillement, héroïsme, monde alternatif",
+  "sci-fi":                  "curiosité intellectuelle, futur, survie, identité humaine",
+  "spiritualité":            "sens de la vie, paix intérieure, connexion, transformation",
+  "santé":                   "peur de la maladie, désir de vitalité, longévité",
+  "policier":                "suspense, justice, mystère, tension narrative",
+  "cuisine":                 "plaisir sensoriel, créativité, partage, fierté culinaire",
+  "jeunesse":                "aventure, identité, amitié, découverte de soi",
 };
-
-function getTriggers(category: string): string {
+function getTriggers(category: string) {
   const cat = category?.toLowerCase() || "";
   return Object.entries(EMOTIONAL_TRIGGERS).find(([k]) => cat.includes(k))?.[1]
     || "curiosité, désir de changement, aspiration à mieux";
 }
 
-// ── Captions multi-plateforme ─────────────────────────────────────────────────
-function captionBlock(bookTitle: string, category: string) {
-  return `
-Génère 3 captions distinctes:
-- "instagram": caption Instagram (200-300 mots, storytelling, emojis, 15-20 hashtags mélange niche+populaire, appel à commenter)
-- "tiktok": caption TikTok (50-80 mots, 5-8 hashtags viraux, ton décontracté GenZ, question ou défi)
-- "youtube": description YouTube Shorts (80-120 mots, mots-clés SEO, timestamps si pertinent, CTA clair)
-Hashtags à inclure: #${bookTitle.replace(/\s+/g, "")} #livre #booktok #livresfrancais #lecture #${(category||"").replace(/\s+/g, "")}
-`.trim();
-}
-
 // ── TEASER (15s) ──────────────────────────────────────────────────────────────
-async function generateTeaser(ctx: string, triggers: string, captionCtx: string) {
-  const r = await groq.chat.completions.create({
-    model: MODEL,
-    temperature: 0.92,
-    max_tokens: 1600,
-    messages: [
-      {
-        role: "system",
-        content: `Tu es un expert en création de contenus viraux et copywriter de niveau mondial.
-Tu maîtrises les formules : Pattern Interrupt, PAS (Problème-Agitation-Solution), AIDA, hooks viraux TikTok.
-Objectif : créer un teaser vidéo de 15s qui fait STOPPER le scroll en moins de 2 secondes.
-Règles d'or :
-- Le hook doit créer un choc cognitif ou une promesse impossible à ignorer
-- Chaque slide = 1 seule idée percutante (pas de phrases longues)
-- Le style "big" = texte en MAJUSCULES court (3-6 mots max)
-- Le CTA final doit créer une urgence ou une curiosité irrésistible
-- Génère 3 hooks alternatifs pour A/B tester
-RÉPONDS UNIQUEMENT EN JSON VALIDE.`
-      },
-      {
-        role: "user",
-        content: `${ctx}
-
-DÉCLENCHEURS ÉMOTIONNELS À EXPLOITER: ${triggers}
-
-Crée un teaser vidéo 15s ultra-percutant avec 3 hooks alternatifs.
-
-JSON EXACT (pas d'autre texte):
-{
-  "hooks": [
-    "HOOK 1 — pattern interrupt choc (ex: 'CE LIVRE M'A SAUVÉ LA VIE')",
-    "HOOK 2 — question qui fait mal (ex: 'POURQUOI TU STRESSES ENCORE?')",
-    "HOOK 3 — stat ou promesse folle (ex: '12 SEMAINES POUR TOUT CHANGER')"
-  ],
-  "slides": [
-    { "text": "HOOK PRINCIPAL", "duration": 2, "style": "big" },
-    { "text": "problème douloureux que ressent l'audience", "duration": 2.5, "style": "normal" },
-    { "text": "CE QUE CE LIVRE CHANGE", "duration": 2.5, "style": "big" },
-    { "text": "résultat concret et désirable promis", "duration": 2.5, "style": "normal" },
-    { "text": "APPEL À L'ACTION URGENT", "duration": 2.5, "style": "cta" },
-    { "text": "titre exact du livre", "duration": 3, "style": "title" }
-  ],
-  "captions": {
-    "instagram": "...",
-    "tiktok": "...",
-    "youtube": "..."
-  }
-}`
-      }
-    ]
-  });
-  return JSON.parse(extractJson(r.choices[0].message.content || "{}"));
+async function generateTeaser(hf: string, ctx: string, triggers: string) {
+  const raw = await callQwen(hf, [
+    {
+      role: "system",
+      content: `Tu es un expert copywriter et créateur de contenus viraux (TikTok, Reels, Shorts).
+Tu maîtrises : Pattern Interrupt, PAS (Problème-Agitation-Solution), AIDA, hooks viraux.
+Objectif : teaser vidéo 15s qui stoppe le scroll en < 2 secondes.
+Règles : hook = choc cognitif ou promesse impossible à ignorer. Style "big" = MAJUSCULES 3-6 mots max. CTA = urgence irrésistible.
+RÉPONDS UNIQUEMENT EN JSON VALIDE, AUCUN AUTRE TEXTE.`
+    },
+    {
+      role: "user",
+      content: `${ctx}\nDÉCLENCHEURS: ${triggers}\n\nJSON EXACT:\n{\n  "hooks": ["HOOK 1 pattern interrupt", "HOOK 2 question douleur", "HOOK 3 stat ou promesse"],\n  "slides": [\n    {"text": "HOOK PRINCIPAL", "duration": 2, "style": "big"},\n    {"text": "problème ressenti par l'audience", "duration": 2.5, "style": "normal"},\n    {"text": "CE QUE CE LIVRE CHANGE", "duration": 2.5, "style": "big"},\n    {"text": "résultat concret promis", "duration": 2.5, "style": "normal"},\n    {"text": "LIEN EN BIO — DISPONIBLE MAINTENANT", "duration": 3, "style": "cta"}\n  ],\n  "captions": {\n    "instagram": "caption Instagram 200-300 mots + 15 hashtags",\n    "tiktok": "caption TikTok 50-80 mots + 6 hashtags viraux",\n    "youtube": "description YouTube Shorts 80-120 mots + mots-clés SEO"\n  }\n}`
+    }
+  ], 1600, 0.92);
+  return parseJson(raw);
 }
 
 // ── CITATION (12s) ────────────────────────────────────────────────────────────
-async function generateCitation(ctx: string, triggers: string, bookTitle: string) {
-  const r = await groq.chat.completions.create({
-    model: MODEL,
-    temperature: 0.93,
-    max_tokens: 1600,
-    messages: [
-      {
-        role: "system",
-        content: `Tu es un expert en extraction et mise en valeur de citations pour les réseaux sociaux.
-Tu sais identifier les phrases qui font RÉFLÉCHIR, qui TOUCHENT au cœur, ou qui PROVOQUENT.
-3 styles de citations : philosophique (fait penser), émotionnel (fait ressentir), provocateur (dérange et intrigue).
-Règles : la citation doit être autonome (compréhensible sans contexte), courte (max 2 phrases), mémorable.
+async function generateCitation(hf: string, ctx: string, triggers: string) {
+  const raw = await callQwen(hf, [
+    {
+      role: "system",
+      content: `Tu es expert en extraction et mise en valeur de citations pour les réseaux sociaux.
+3 styles : Philosophique (fait réfléchir), Émotionnel (touche le cœur), Provocateur (dérange et intrigue).
+Citation = autonome (compréhensible sans contexte), courte (max 2 phrases), mémorable.
 RÉPONDS UNIQUEMENT EN JSON VALIDE.`
-      },
-      {
-        role: "user",
-        content: `${ctx}
-
-DÉCLENCHEURS: ${triggers}
-
-Génère 3 variantes de vidéo citation (12s chacune), chaque variante avec un style différent.
-
-JSON EXACT:
-{
-  "variants": [
-    {
-      "style_name": "Philosophique",
-      "intro": "courte phrase d'intro créant la curiosité (ex: 'Sur la peur du changement :')",
-      "quote": "citation principale forte et autonome (1-2 phrases percutantes, comme si c'était dans le livre)",
-      "punchline": "phrase conclusive qui claque (ex: 'Ça fait mal. Mais c'est vrai.')",
-      "caption_instagram": "caption Instagram avec contexte émotionnel + hashtags",
-      "caption_tiktok": "caption TikTok court + hashtags viraux"
     },
     {
-      "style_name": "Émotionnel",
-      "intro": "...",
-      "quote": "...",
-      "punchline": "...",
-      "caption_instagram": "...",
-      "caption_tiktok": "..."
-    },
-    {
-      "style_name": "Provocateur",
-      "intro": "...",
-      "quote": "...",
-      "punchline": "...",
-      "caption_instagram": "...",
-      "caption_tiktok": "..."
+      role: "user",
+      content: `${ctx}\nDÉCLENCHEURS: ${triggers}\n\nJSON EXACT:\n{\n  "variants": [\n    {\n      "style_name": "Philosophique",\n      "intro": "courte phrase d'intro créant la curiosité",\n      "quote": "citation principale forte et autonome (1-2 phrases percutantes)",\n      "punchline": "phrase conclusive qui claque",\n      "caption_instagram": "caption Instagram + hashtags",\n      "caption_tiktok": "caption TikTok court + hashtags viraux"\n    },\n    {"style_name": "Émotionnel", "intro": "...", "quote": "...", "punchline": "...", "caption_instagram": "...", "caption_tiktok": "..."},\n    {"style_name": "Provocateur", "intro": "...", "quote": "...", "punchline": "...", "caption_instagram": "...", "caption_tiktok": "..."}\n  ]\n}`
     }
-  ]
-}`
-      }
-    ]
-  });
-  return JSON.parse(extractJson(r.choices[0].message.content || "{}"));
+  ], 1600, 0.93);
+  return parseJson(raw);
 }
 
 // ── PROMO REEL (30s) ──────────────────────────────────────────────────────────
-async function generatePromo(ctx: string, triggers: string, captionCtx: string) {
-  const r = await groq.chat.completions.create({
-    model: MODEL,
-    temperature: 0.88,
-    max_tokens: 1800,
-    messages: [
-      {
-        role: "system",
-        content: `Tu es un directeur créatif spécialisé en vidéos promotionnelles pour livres et infoproduits.
-Tu utilises la formule PAS (Problème → Agitation → Solution) combinée au Before/After/Bridge.
-Principes : sois SPÉCIFIQUE (chiffres, noms, résultats concrets), ÉMOTIONNEL (touche la douleur réelle), CRÉDIBLE.
-Évite les généralités. Chaque slide doit avoir un seul message puissant.
+async function generatePromo(hf: string, ctx: string, triggers: string) {
+  const raw = await callQwen(hf, [
+    {
+      role: "system",
+      content: `Tu es directeur créatif spécialisé en vidéos promotionnelles pour livres et infoproduits.
+Tu utilises PAS (Problème → Agitation → Solution) + Before/After/Bridge.
+Sois SPÉCIFIQUE (chiffres, résultats concrets), ÉMOTIONNEL (touche la vraie douleur), CRÉDIBLE.
 RÉPONDS UNIQUEMENT EN JSON VALIDE.`
-      },
-      {
-        role: "user",
-        content: `${ctx}
-
-DÉCLENCHEURS ÉMOTIONNELS: ${triggers}
-
-Crée une vidéo promo 30s (formule PAS + Before/After) avec 2 angles alternatifs.
-
-JSON EXACT:
-{
-  "headline": "accroche principale ultra-percutante",
-  "angle_a": {
-    "name": "Angle Problème",
-    "slides": [
-      { "text": "LE PROBLÈME EN 3 MOTS", "subtext": "douleur spécifique que ressent l'audience", "duration": 4, "style": "big" },
-      { "text": "Et si ce n'était pas ta faute?", "subtext": "réencadrage du problème", "duration": 4, "style": "normal" },
-      { "text": "CE LIVRE EXPLIQUE POURQUOI", "subtext": "promesse de révélation", "duration": 4, "style": "big" },
-      { "text": "Bénéfice 1 concret", "subtext": "résultat mesurable ou transformation", "duration": 4, "style": "normal" },
-      { "text": "Bénéfice 2 concret", "subtext": "résultat mesurable ou transformation", "duration": 4, "style": "normal" },
-      { "text": "REJOINS LES LECTEURS QUI ONT CHANGÉ", "subtext": "Lien en bio · Disponible maintenant", "duration": 10, "style": "cta" }
-    ]
-  },
-  "angle_b": {
-    "name": "Angle Transformation",
-    "slides": [
-      { "text": "AVANT DE LIRE CE LIVRE", "subtext": "situation de départ douloureuse", "duration": 4, "style": "big" },
-      { "text": "APRÈS…", "subtext": "transformation désirable et spécifique", "duration": 4, "style": "big" },
-      { "text": "Ce que tu vas apprendre", "subtext": "bénéfice principal", "duration": 4, "style": "normal" },
-      { "text": "Ce que tu vas ressentir", "subtext": "émotion ou état cible", "duration": 4, "style": "normal" },
-      { "text": "Ce que ça va changer", "subtext": "impact concret dans la vie", "duration": 4, "style": "normal" },
-      { "text": "COMMENCE AUJOURD'HUI", "subtext": "Lien en bio · Disponible maintenant", "duration": 10, "style": "cta" }
-    ]
-  },
-  "captions": {
-    "instagram": "...",
-    "tiktok": "...",
-    "youtube": "..."
-  }
-}`
-      }
-    ]
-  });
-  return JSON.parse(extractJson(r.choices[0].message.content || "{}"));
+    },
+    {
+      role: "user",
+      content: `${ctx}\nDÉCLENCHEURS: ${triggers}\n\nJSON EXACT:\n{\n  "headline": "accroche ultra-percutante",\n  "angle_a": {\n    "name": "Angle Problème",\n    "slides": [\n      {"text": "LE PROBLÈME", "subtext": "douleur spécifique", "duration": 4, "style": "big"},\n      {"text": "Et si ce n'était pas ta faute?", "subtext": "réencadrage", "duration": 4, "style": "normal"},\n      {"text": "CE LIVRE EXPLIQUE POURQUOI", "subtext": "promesse", "duration": 4, "style": "big"},\n      {"text": "Bénéfice 1 concret", "subtext": "résultat mesurable", "duration": 4, "style": "normal"},\n      {"text": "Bénéfice 2 concret", "subtext": "résultat mesurable", "duration": 4, "style": "normal"},\n      {"text": "REJOINS LES LECTEURS QUI ONT CHANGÉ", "subtext": "Lien en bio", "duration": 10, "style": "cta"}\n    ]\n  },\n  "angle_b": {\n    "name": "Angle Transformation",\n    "slides": [\n      {"text": "AVANT CE LIVRE", "subtext": "situation de départ douloureuse", "duration": 4, "style": "big"},\n      {"text": "APRÈS…", "subtext": "transformation désirable", "duration": 4, "style": "big"},\n      {"text": "Ce que tu vas apprendre", "subtext": "bénéfice principal", "duration": 4, "style": "normal"},\n      {"text": "Ce que tu vas ressentir", "subtext": "état cible", "duration": 4, "style": "normal"},\n      {"text": "Ce que ça va changer", "subtext": "impact concret", "duration": 4, "style": "normal"},\n      {"text": "COMMENCE AUJOURD'HUI", "subtext": "Lien en bio", "duration": 10, "style": "cta"}\n    ]\n  },\n  "captions": {"instagram": "...", "tiktok": "...", "youtube": "..."}\n}`
+    }
+  ], 1800, 0.88);
+  return parseJson(raw);
 }
 
 // ── BOOK TRAILER (45s) ───────────────────────────────────────────────────────
-async function generateBooktrailer(ctx: string, triggers: string, captionCtx: string) {
-  const r = await groq.chat.completions.create({
-    model: MODEL,
-    temperature: 0.9,
-    max_tokens: 2000,
-    messages: [
-      {
-        role: "system",
-        content: `Tu es un scénariste de bandes-annonces de films et de book trailers.
-Tu connais la structure narrative de Christopher Vogler (Le Voyage du Héros) et les techniques des meilleurs trailers Marvel/Netflix.
-Structure : Monde ordinaire → Déséquilibre → Quête/Révélation → Montée en tension → Climax → Appel à l'action.
-Ton texte à l'écran est court et percutant. La narration off est plus riche et évocatrice.
-Crée des métaphores visuelles fortes. Utilise des ellipses pour créer du suspense.
+async function generateBooktrailer(hf: string, ctx: string, triggers: string) {
+  const raw = await callQwen(hf, [
+    {
+      role: "system",
+      content: `Tu es scénariste de bandes-annonces cinéma et book trailers style Netflix.
+Structure : Monde ordinaire → Déséquilibre → Quête → Tension → Climax → Appel à l'action.
+Texte à l'écran : court et percutant. Narration off : riche et évocatrice.
+Crée des métaphores visuelles fortes. Ellipses pour le suspense.
 RÉPONDS UNIQUEMENT EN JSON VALIDE.`
-      },
-      {
-        role: "user",
-        content: `${ctx}
-
-DÉCLENCHEURS ÉMOTIONNELS: ${triggers}
-
-Crée un book trailer cinématique 45s de style Netflix/cinéma.
-
-JSON EXACT:
-{
-  "title": "titre accrocheur pour la vidéo",
-  "logline": "description du livre en 1 phrase cinématique (style synopsis film)",
-  "scenes": [
-    { "id": 1, "text": "texte court à l'écran", "narration": "voix off évocatrice et poétique", "duration": 5, "style": "intro", "visual_cue": "suggestion visuelle Wan2.1 (ex: 'slow zoom sur horizon brumeux')"},
-    { "id": 2, "text": "...", "narration": "...", "duration": 6, "style": "tension", "visual_cue": "..."},
-    { "id": 3, "text": "...", "narration": "...", "duration": 6, "style": "reveal", "visual_cue": "..."},
-    { "id": 4, "text": "...", "narration": "...", "duration": 6, "style": "tension", "visual_cue": "..."},
-    { "id": 5, "text": "...", "narration": "...", "duration": 7, "style": "climax", "visual_cue": "..."},
-    { "id": 6, "text": "...", "narration": "...", "duration": 8, "style": "big", "visual_cue": "..."},
-    { "id": 7, "text": "titre exact du livre", "narration": "disponible maintenant", "duration": 7, "style": "title", "visual_cue": "fade to black lent"}
-  ],
-  "full_narration": "script voix off complet enchaîné (60-80 mots, style cinéma)",
-  "music_vibe": "description du style musical idéal (ex: 'orchestral épique Hans Zimmer, montée progressive')",
-  "captions": {
-    "instagram": "...",
-    "tiktok": "...",
-    "youtube": "..."
-  }
-}`
-      }
-    ]
-  });
-  return JSON.parse(extractJson(r.choices[0].message.content || "{}"));
+    },
+    {
+      role: "user",
+      content: `${ctx}\nDÉCLENCHEURS: ${triggers}\n\nJSON EXACT:\n{\n  "title": "titre accrocheur",\n  "logline": "description 1 phrase style synopsis film",\n  "scenes": [\n    {"id": 1, "text": "texte écran court", "narration": "voix off évocatrice", "duration": 5, "style": "intro", "visual_cue": "suggestion visuelle Wan2.1"},\n    {"id": 2, "text": "...", "narration": "...", "duration": 6, "style": "tension", "visual_cue": "..."},\n    {"id": 3, "text": "...", "narration": "...", "duration": 6, "style": "reveal", "visual_cue": "..."},\n    {"id": 4, "text": "...", "narration": "...", "duration": 6, "style": "tension", "visual_cue": "..."},\n    {"id": 5, "text": "...", "narration": "...", "duration": 7, "style": "climax", "visual_cue": "..."},\n    {"id": 6, "text": "titre exact du livre", "narration": "disponible maintenant", "duration": 8, "style": "title", "visual_cue": "fade to black"}\n  ],\n  "full_narration": "script voix off complet (60-80 mots, style cinéma)",\n  "music_vibe": "style musical idéal",\n  "captions": {"instagram": "...", "tiktok": "...", "youtube": "..."}\n}`
+    }
+  ], 2000, 0.90);
+  return parseJson(raw);
 }
 
 // ── SHORTS / REEL (60s) ──────────────────────────────────────────────────────
-async function generateShorts(ctx: string, triggers: string, captionCtx: string) {
-  const r = await groq.chat.completions.create({
-    model: MODEL,
-    temperature: 0.93,
-    max_tokens: 2200,
-    messages: [
-      {
-        role: "system",
-        content: `Tu es un créateur de contenu viral avec 5M+ abonnés sur TikTok/YouTube Shorts.
-Tu maîtrises les formules qui font exploser les vues :
-- "POV: tu viens de réaliser que..."
-- "La raison pour laquelle 97% des gens échouent à..."
-- "Personne ne te dit la vérité sur..."
-- "J'ai lu 500 livres. Celui-là a tout changé."
-- "Ce livre m'a appris ce que l'école ne m'a jamais enseigné"
-Chaque segment doit accrocher et ne pas laisser partir le spectateur.
-Génère 3 hooks viraux différents. Le script doit sonner naturel, comme quelqu'un qui parle à son téléphone.
-Texte à l'écran : phrases courtes, maximum 6 mots, pour accompagner la voix.
+async function generateShorts(hf: string, ctx: string, triggers: string) {
+  const raw = await callQwen(hf, [
+    {
+      role: "system",
+      content: `Tu es créateur viral avec 5M+ abonnés TikTok/YouTube Shorts.
+Formules qui explosent les vues : "POV: tu viens de réaliser que...", "La raison pour laquelle 97% échouent à...", "Personne ne te dit la vérité sur...", "J'ai lu 500 livres. Celui-là a tout changé."
+Script : naturel, comme quelqu'un qui parle à son téléphone. Texte écran : max 6 mots.
 RÉPONDS UNIQUEMENT EN JSON VALIDE.`
-      },
-      {
-        role: "user",
-        content: `${ctx}
-
-DÉCLENCHEURS ÉMOTIONNELS: ${triggers}
-
-Crée un script Shorts/Reel/TikTok de 60s avec 3 hooks viraux alternatifs.
-
-JSON EXACT:
-{
-  "hooks": [
-    "HOOK VIRAL 1 — style POV ou 'personne ne te dit que...'",
-    "HOOK VIRAL 2 — style statistique choc ou promesse folle",
-    "HOOK VIRAL 3 — style confession personnelle ou révélation"
-  ],
-  "script": "script complet parlé à voix haute (150-170 mots, ton décontracté et direct, comme si tu parlais à un ami)",
-  "segments": [
-    { "label": "Hook (0-3s)", "text": "phrase d'ouverture choc", "onscreen": "TEXTE COURT ÉCRAN" },
-    { "label": "Problème (3-12s)", "text": "douleur/frustration de l'audience", "onscreen": "MOTS CLÉS" },
-    { "label": "Agitation (12-22s)", "text": "pourquoi c'est grave de ne pas régler ça", "onscreen": "IMPACT" },
-    { "label": "Solution (22-40s)", "text": "ce que le livre apporte comme réponse", "onscreen": "CE QUE TU VAS APPRENDRE" },
-    { "label": "Preuve (40-52s)", "text": "résultat, transformation, ou citation du livre", "onscreen": "RÉSULTAT CONCRET" },
-    { "label": "CTA (52-60s)", "text": "appel à l'action direct et urgent", "onscreen": "LIEN EN BIO 👇" }
-  ],
-  "onscreenText": [
-    "TEXTE 1 POUR L'ÉCRAN (6 mots max)",
-    "TEXTE 2",
-    "TEXTE 3",
-    "TEXTE 4",
-    "TEXTE 5"
-  ],
-  "captions": {
-    "instagram": "...",
-    "tiktok": "...",
-    "youtube": "..."
-  }
-}`
-      }
-    ]
-  });
-  return JSON.parse(extractJson(r.choices[0].message.content || "{}"));
+    },
+    {
+      role: "user",
+      content: `${ctx}\nDÉCLENCHEURS: ${triggers}\n\nJSON EXACT:\n{\n  "hooks": [\n    "HOOK VIRAL 1 — style POV ou personne ne te dit que...",\n    "HOOK VIRAL 2 — stat choc ou promesse folle",\n    "HOOK VIRAL 3 — confession personnelle ou révélation"\n  ],\n  "script": "script complet parlé à voix haute (150-170 mots, ton décontracté et direct)",\n  "segments": [\n    {"label": "Hook (0-3s)", "text": "phrase d'ouverture choc", "onscreen": "TEXTE COURT"},\n    {"label": "Problème (3-12s)", "text": "douleur de l'audience", "onscreen": "MOTS CLÉS"},\n    {"label": "Agitation (12-22s)", "text": "pourquoi c'est grave", "onscreen": "IMPACT"},\n    {"label": "Solution (22-40s)", "text": "ce que le livre apporte", "onscreen": "CE QUE TU APPRENDS"},\n    {"label": "Preuve (40-52s)", "text": "résultat ou citation", "onscreen": "RÉSULTAT"},\n    {"label": "CTA (52-60s)", "text": "appel à l'action urgent", "onscreen": "LIEN EN BIO 👇"}\n  ],\n  "onscreenText": ["TEXTE 1 (6 mots max)", "TEXTE 2", "TEXTE 3", "TEXTE 4", "TEXTE 5"],\n  "captions": {"instagram": "...", "tiktok": "...", "youtube": "..."}\n}`
+    }
+  ], 2200, 0.93);
+  return parseJson(raw);
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  const hfToken = req.headers.get("x-hf-token") || "";
+  if (!hfToken) {
+    return NextResponse.json({
+      error: "Token HuggingFace manquant",
+      detail: "Ajoute ton token HuggingFace (hf_...) dans l'onglet Comptes → section Clés IA. C'est gratuit sur huggingface.co/settings/tokens"
+    }, { status: 400 });
+  }
+
   const body = await req.json() as {
     type: string; bookTitle: string; category?: string; description?: string;
     targetAudience?: string; themes?: string; price?: number;
@@ -370,19 +217,25 @@ export async function POST(req: NextRequest) {
 
   const ctx = buildBookContext(body);
   const triggers = getTriggers(body.category || "");
-  const captionCtx = captionBlock(body.bookTitle, body.category || "");
 
   try {
     switch (body.type) {
-      case "teaser":      return NextResponse.json(await generateTeaser(ctx, triggers, captionCtx));
-      case "citation":    return NextResponse.json(await generateCitation(ctx, triggers, body.bookTitle));
-      case "promo":       return NextResponse.json(await generatePromo(ctx, triggers, captionCtx));
-      case "booktrailer": return NextResponse.json(await generateBooktrailer(ctx, triggers, captionCtx));
-      case "shorts":      return NextResponse.json(await generateShorts(ctx, triggers, captionCtx));
+      case "teaser":      return NextResponse.json(await generateTeaser(hfToken, ctx, triggers));
+      case "citation":    return NextResponse.json(await generateCitation(hfToken, ctx, triggers));
+      case "promo":       return NextResponse.json(await generatePromo(hfToken, ctx, triggers));
+      case "booktrailer": return NextResponse.json(await generateBooktrailer(hfToken, ctx, triggers));
+      case "shorts":      return NextResponse.json(await generateShorts(hfToken, ctx, triggers));
       default:            return NextResponse.json({ error: "Type inconnu" }, { status: 400 });
     }
   } catch (e) {
-    console.error("[video-script]", e);
-    return NextResponse.json({ error: "Génération échouée", detail: String(e) }, { status: 500 });
+    console.error("[video-script/qwen]", e);
+    const msg = String(e);
+    return NextResponse.json({
+      error: "Génération Qwen échouée",
+      detail: msg.includes("401") ? "Token HuggingFace invalide ou expiré" :
+              msg.includes("429") ? "Limite de taux HuggingFace atteinte — réessaie dans 1 minute" :
+              msg.includes("503") ? "Modèle en cours de chargement — réessaie dans 30 secondes" :
+              msg
+    }, { status: 500 });
   }
 }

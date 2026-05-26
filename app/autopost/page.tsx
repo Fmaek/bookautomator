@@ -634,11 +634,15 @@ export default function AutoPostPage() {
   // ── Video ─────────────────────────────────────────────────────────────────────
   const generateScript = async () => {
     if (!book) return;
+    if (!creds.hfToken) {
+      setScriptError("Token HuggingFace manquant — va dans l'onglet Comptes et ajoute ton token hf_... (gratuit sur huggingface.co/settings/tokens)");
+      return;
+    }
     setGenerating(true); setScript(null); setVideoBlobUrl(null); setScriptError(null); setActiveVariant(0);
     try {
       const res = await fetch("/api/video-script", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-hf-token": creds.hfToken },
         body: JSON.stringify({
           type: videoType,
           bookTitle: book.title,
