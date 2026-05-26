@@ -25,6 +25,29 @@ except ImportError:
     print("⚠  imageio/Pillow non installés — génération vidéo HD désactivée.")
     print("   Lance: pip install imageio imageio-ffmpeg Pillow numpy")
 
+# ── Wan2.1 — local (GPU) ──────────────────────────────────────────────────────
+try:
+    import torch
+    from diffusers import WanPipeline
+    from diffusers.utils import export_to_video
+    HAS_WAN_LOCAL = torch.cuda.is_available()
+    if HAS_WAN_LOCAL:
+        print("✓ GPU CUDA détecté — Wan2.1 local disponible")
+    else:
+        print("⚠  Wan2.1 local : aucun GPU CUDA — utilisation HuggingFace Spaces")
+except ImportError:
+    HAS_WAN_LOCAL = False
+
+# ── Wan2.1 — HuggingFace Spaces (gratuit, sans GPU) ──────────────────────────
+try:
+    from gradio_client import Client as GradioClient
+    HAS_GRADIO = True
+except ImportError:
+    HAS_GRADIO = False
+    print("⚠  gradio_client non installé. Lance: pip install gradio_client")
+
+_wan_pipe = None  # pipeline local chargé à la demande
+
 # ── Install check ─────────────────────────────────────────────────────────────
 try:
     from instagrapi import Client as InstaClient
@@ -84,6 +107,116 @@ PEXELS_QUERIES = {
     "santé":"health wellness nature",
     "policier":"detective mystery dark street night",
 }
+
+# ── Wan2.1 : prompts et génération ───────────────────────────────────────────
+_WAN_CAT: dict[str,str] = {
+    "développement": "inspiring journey of personal growth, achievement visualization, motivational path",
+    "self-help":     "inspiring journey of personal growth, achievement visualization, motivational path",
+    "romance":       "romantic atmosphere, warm soft lighting, petals floating, emotional",
+    "thriller":      "tense dark mysterious atmosphere, dramatic shadows, suspenseful noir",
+    "horreur":       "haunting dark atmosphere, eerie fog, dramatic shadows, horror",
+    "fantasy":       "magical mystical landscape, ethereal glowing light, enchanted forest",
+    "sci-fi":        "futuristic neon technology, space nebula, high-tech environment",
+    "science-fiction":"futuristic neon technology, space nebula, high-tech environment",
+    "business":      "professional modern architecture, dynamic city skyline, corporate success",
+    "finance":       "gold coins, abstract financial growth charts, luxury aesthetic",
+    "spiritualité":  "peaceful zen garden, soft golden sunrise, tranquil meditation",
+    "histoire":      "ancient architecture, historical ruins, vintage cinematic aesthetic",
+    "policier":      "dark rainy city night, detective noir, dramatic street lighting",
+    "cuisine":       "beautiful food presentation, warm kitchen light, artistic close-up",
+    "santé":         "fresh green nature, wellness outdoor, peaceful healthy lifestyle",
+    "jeunesse":      "colorful vibrant world, playful magical, bright cheerful atmosphere",
+}
+_WAN_THEME: dict[str,str] = {
+    "dark":   "deep purple dark tones, volumetric fog, cinematic shadows",
+    "gold":   "warm golden hour light, amber tones, luxurious glow",
+    "ocean":  "blue oceanic tones, fluid water movement, ethereal mist",
+    "fire":   "warm orange red tones, dynamic flame energy, intense heat",
+    "forest": "lush green tones, dappled light through leaves, organic life",
+    "rose":   "soft pink rose tones, petals, romantic elegant atmosphere",
+}
+_WAN_TYPE: dict[str,str] = {
+    "teaser":      "quick dramatic reveal, building tension, slow motion opening",
+    "citation":    "peaceful contemplative slow pan, elegant minimal movement",
+    "promo":       "dynamic inspiring commercial quality, smooth camera movement",
+    "booktrailer": "epic sweeping cinematic movement, grand scale reveal",
+    "shorts":      "energetic modern dynamic, trending visual style, eye-catching",
+}
+_WAN_NEG = ("text, watermark, logo, subtitle, people, faces, hands, fingers, "
+            "blurry, low quality, ugly, distorted, overexposed, noisy, static, pixelated")
+
+def build_wan_prompt(category: str, video_type: str, theme: str) -> tuple[str, str]:
+    cat = category.lower().strip()
+    cat_desc  = next((v for k,v in _WAN_CAT.items()  if k in cat), "dramatic cinematic atmosphere")
+    thm_desc  = _WAN_THEME.get(theme,  "cinematic dramatic lighting")
+    type_desc = _WAN_TYPE.get(video_type, "cinematic slow motion")
+    prompt = (f"{cat_desc}, {thm_desc}, {type_desc}, "
+              f"professional film quality 4K, smooth slow motion, abstract, no text, no watermark")
+    return prompt, _WAN_NEG
+
+async def generate_wan_video_bytes(category: str, video_type: str, theme: str,
+                                   fmt: str = "portrait") -> Optional[bytes]:
+    """Génère une vidéo background Wan2.1 (local GPU ou HF Spaces)."""
+    global _wan_pipe
+    prompt, negative = build_wan_prompt(category, video_type, theme)
+
+    # ── Tentative 1 : GPU local ──────────────────────────────────────────────
+    if HAS_WAN_LOCAL:
+        try:
+            if _wan_pipe is None:
+                print("📦 Chargement Wan2.1-T2V-1.3B (première fois, ~3 min)…")
+                _wan_pipe = WanPipeline.from_pretrained(
+                    "Wan-AI/Wan2.1-T2V-1.3B", torch_dtype=torch.bfloat16
+                )
+                _wan_pipe.enable_model_cpu_offload()
+                print("✓ Wan2.1 local chargé.")
+            print(f"🎬 Wan2.1 local génère : {prompt[:80]}…")
+            out = _wan_pipe(
+                prompt=prompt, negative_prompt=negative,
+                height=480, width=832 if fmt != "portrait" else 480,
+                num_frames=49, guidance_scale=5.0, num_inference_steps=25,
+            ).frames[0]
+            tmp = COVERS_DIR / f"wan_{uuid.uuid4().hex}.mp4"
+            export_to_video(out, str(tmp), fps=16)
+            data = tmp.read_bytes(); tmp.unlink(missing_ok=True)
+            print("✓ Wan2.1 local : vidéo générée.")
+            return data
+        except Exception as e:
+            print(f"⚠ Wan2.1 local : {e}")
+
+    # ── Tentative 2 : HuggingFace Spaces (gratuit, sans GPU) ────────────────
+    if HAS_GRADIO:
+        spaces = [
+            "Wan-AI/Wan2.1-T2V-1.3B",
+            "Wan-Video/Wan2.1-T2V-1.3B",
+        ]
+        for space in spaces:
+            try:
+                print(f"🌐 Wan2.1 via HF Spaces ({space})…")
+                client = GradioClient(space, verbose=False)
+                # Essayer différents noms d'API courants
+                for api_name in ["/generate_video", "/predict", "/infer", "/run"]:
+                    try:
+                        result = client.predict(
+                            prompt, negative, 5.0, 25, 49,
+                            api_name=api_name
+                        )
+                        # result = path vers fichier vidéo local temporaire
+                        vid_path = result if isinstance(result, str) else (
+                            result.get("video") or result.get("value") if isinstance(result, dict) else None
+                        )
+                        if vid_path and os.path.exists(str(vid_path)):
+                            data = Path(vid_path).read_bytes()
+                            print(f"✓ Wan2.1 HF Spaces OK ({space})")
+                            return data
+                    except Exception:
+                        continue
+            except Exception as e:
+                print(f"⚠ Wan2.1 HF Spaces {space}: {e}")
+                continue
+
+    print("⚠ Wan2.1 indisponible (ni GPU local ni HF Spaces)")
+    return None
 
 # ── Helpers de rendu vidéo ────────────────────────────────────────────────────
 if HAS_VIDGEN:
@@ -293,6 +426,12 @@ class VideoGenRequest(BaseModel):
     cover_base64: Optional[str] = None
     pexels_key: Optional[str] = None
     music_base64: Optional[str] = None  # audio FLAC en base64
+    use_wan: bool = False               # utiliser Wan2.1 pour le fond
+
+class WanStatusResponse(BaseModel):
+    has_local_gpu: bool
+    has_gradio_client: bool
+    model_loaded: bool
 
 # ── Instagram (instagrapi — username + password, sans API) ────────────────────
 _insta_client: Optional["InstaClient"] = None  # type: ignore
@@ -889,6 +1028,15 @@ async def login_platform(platform: str):
     return {"ok": True, "message": f"Session {platform} sauvegardée"}
 
 # ── Générateur vidéo HD (imageio + Pillow) ────────────────────────────────────
+@app.get("/api/book/wan-status")
+def wan_status():
+    return {
+        "has_local_gpu": HAS_WAN_LOCAL,
+        "has_gradio_client": HAS_GRADIO,
+        "model_loaded": _wan_pipe is not None,
+        "available": HAS_WAN_LOCAL or HAS_GRADIO,
+    }
+
 @app.post("/api/book/generate-video")
 async def generate_video_hd(req: VideoGenRequest):
     if not HAS_VIDGEN:
@@ -907,13 +1055,44 @@ async def generate_video_hd(req: VideoGenRequest):
     if req.cover_base64:
         cover = _load_cover(req.cover_base64, int(W * 0.55), int(W * 0.88))
 
-    # Télécharger vidéo Pexels pour les frames de fond
+    # ── Fond vidéo : priorité Wan2.1 > Pexels > Gradient ─────────────────────
     bg_frames: list = []
-    if req.pexels_key:
+
+    def _extract_bg_frames(vid_bytes: bytes, max_frames: int = 300) -> list:
+        """Extrait les frames d'une vidéo bytes → list[PIL.Image]."""
+        tmp = COVERS_DIR / f"bg_{uuid.uuid4().hex}.mp4"
+        tmp.write_bytes(vid_bytes)
+        frames = []
+        try:
+            reader = imageio.get_reader(str(tmp))
+            vfps = reader.get_meta_data().get("fps", 25)
+            for i, fr in enumerate(reader):
+                if i % max(1, int(vfps // 8)) == 0:
+                    frames.append(Image.fromarray(fr))
+                if len(frames) >= max_frames: break
+            reader.close()
+        except Exception as e:
+            print(f"extract frames: {e}")
+        finally:
+            tmp.unlink(missing_ok=True)
+        return frames
+
+    # 1. Wan2.1 (IA générative — fond unique)
+    if req.use_wan and (HAS_WAN_LOCAL or HAS_GRADIO):
+        print("🎬 Génération fond Wan2.1…")
+        wan_bytes = await generate_wan_video_bytes(
+            req.book_category, "teaser", req.theme, req.format
+        )
+        if wan_bytes:
+            bg_frames = _extract_bg_frames(wan_bytes, 300)
+            print(f"✓ Wan2.1 : {len(bg_frames)} frames extraites")
+
+    # 2. Pexels (si pas de Wan2.1 ou échec)
+    if not bg_frames and req.pexels_key:
         try:
             import requests as rq
             cat = (req.book_category or "").lower()
-            query = next((v for k, v in PEXELS_QUERIES.items() if k in cat),
+            query = next((v for k,v in PEXELS_QUERIES.items() if k in cat),
                          "cinematic dramatic landscape")
             orient = "portrait" if req.format == "portrait" else "landscape"
             pex = rq.get(
@@ -925,17 +1104,8 @@ async def generate_video_hd(req: VideoGenRequest):
                 f = sorted([x for x in files if x["width"] <= 1280], key=lambda x: -x["width"])
                 if f:
                     vid_bytes = rq.get(f[0]["link"], timeout=40).content
-                    tmp = COVERS_DIR / f"bg_{uuid.uuid4().hex}.mp4"
-                    tmp.write_bytes(vid_bytes)
-                    reader = imageio.get_reader(str(tmp))
-                    meta = reader.get_meta_data()
-                    vfps = meta.get("fps", 25)
-                    for i, fr in enumerate(reader):
-                        if i % max(1, int(vfps // 6)) == 0:
-                            bg_frames.append(Image.fromarray(fr))
-                        if len(bg_frames) >= 250: break
-                    reader.close()
-                    tmp.unlink(missing_ok=True)
+                    bg_frames = _extract_bg_frames(vid_bytes)
+                    print(f"✓ Pexels : {len(bg_frames)} frames")
         except Exception as e:
             print(f"Pexels: {e}")
 

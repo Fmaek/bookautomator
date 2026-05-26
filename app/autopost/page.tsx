@@ -454,6 +454,9 @@ export default function AutoPostPage() {
   const [loadingQueue, setLoadingQueue] = useState(false);
   const [queueFilter, setQueueFilter] = useState<"all" | "pending" | "done">("all");
 
+  const [useWan, setUseWan] = useState(false);
+  const [wanAvailable, setWanAvailable] = useState<boolean | null>(null);
+
   // Credentials (stored in localStorage, never server-side)
   const [creds, setCreds] = useState<Creds>({ instagram: { username: "", password: "" }, tiktok_session: false, twitter_session: false, facebook_session: false, pexelsKey: "", hfToken: "" });
   const [showPwd, setShowPwd] = useState(false);
@@ -480,7 +483,13 @@ export default function AutoPostPage() {
       const res = await fetch(`${SERVER}/api/book/status`, { signal: AbortSignal.timeout(3000) });
       const data = await res.json() as Record<string, unknown>;
       setServerInfo(data); setConnected(true);
-    } catch { setConnected(false); }
+      // Vérifier disponibilité Wan2.1
+      try {
+        const wRes = await fetch(`${SERVER}/api/book/wan-status`, { signal: AbortSignal.timeout(3000) });
+        const wData = await wRes.json() as { available?: boolean };
+        setWanAvailable(wData.available ?? false);
+      } catch { setWanAvailable(false); }
+    } catch { setConnected(false); setWanAvailable(false); }
     setChecking(false);
   }, []);
 
@@ -624,7 +633,7 @@ export default function AutoPostPage() {
       } catch (e) { console.warn("MusicGen:", e); }
     }
     setRenderProgress(20);
-    setRenderStage("🎬 Rendu vidéo HD côté serveur…");
+    setRenderStage(useWan ? "🤖 Génération fond Wan2.1 (peut prendre 1-3 min)…" : "🎬 Rendu vidéo HD côté serveur…");
 
     const body = {
       slides,
@@ -635,6 +644,7 @@ export default function AutoPostPage() {
       cover_base64: book?.coverDataUrl || null,
       pexels_key: creds.pexelsKey || null,
       music_base64: musicB64,
+      use_wan: useWan && wanAvailable,
     };
 
     const ticker = setInterval(() => setRenderProgress(p => Math.min(90, p + 2)), 800);
@@ -956,6 +966,40 @@ export default function AutoPostPage() {
               <div className="grid grid-cols-3 gap-1.5">
                 {THEMES.map(t => <button key={t.id} onClick={() => setVideoTheme(t.id)} className={`flex flex-col items-center gap-1 p-1.5 rounded-lg border transition-all ${videoTheme === t.id ? "border-violet-500/50" : "border-white/[0.05]"}`}><div className="w-full h-5 rounded" style={{ background: `linear-gradient(135deg, ${t.bg1}, ${t.bg2})`, border: `1.5px solid ${t.accent}50` }} /><span className="text-xs text-white/40">{t.label}</span></button>)}
               </div>
+
+              {/* ── Fond IA ─────────────────────────────────────────────── */}
+              {connected && (
+                <div className="border border-white/[0.06] rounded-xl p-3 space-y-2">
+                  <p className="text-white/40 text-xs font-medium">Fond vidéo</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[
+                      { id: false, label: "Gradient", sub: "Toujours dispo", active: !useWan },
+                      { id: true,  label: "Wan2.1 IA", sub: wanAvailable ? "IA générative" : "Non installé", active: useWan },
+                    ].map(opt => (
+                      <button key={String(opt.id)}
+                        onClick={() => { if (!opt.id || wanAvailable) setUseWan(opt.id as boolean); }}
+                        disabled={opt.id === true && !wanAvailable}
+                        className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg border text-xs transition-all disabled:opacity-30 ${opt.active ? "border-violet-500/50 bg-violet-500/10 text-white" : "border-white/[0.05] text-white/40"}`}>
+                        <span className="font-medium">{opt.label}</span>
+                        <span className="text-white/30 text-[10px]">{opt.sub}</span>
+                      </button>
+                    ))}
+                    {creds.pexelsKey && (
+                      <button onClick={() => setUseWan(false)}
+                        className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg border text-xs transition-all ${!useWan && creds.pexelsKey ? "border-blue-500/50 bg-blue-500/10 text-blue-300" : "border-white/[0.05] text-white/40"}`}>
+                        <span className="font-medium">Pexels</span>
+                        <span className="text-white/30 text-[10px]">Stock vidéo</span>
+                      </button>
+                    )}
+                  </div>
+                  {useWan && wanAvailable && (
+                    <p className="text-violet-400/70 text-[10px]">🤖 Wan2.1 génère un fond IA unique pour ce livre. Peut prendre 1–5 min.</p>
+                  )}
+                  {useWan && !wanAvailable && (
+                    <p className="text-amber-400/70 text-[10px]">Lance: <code className="bg-black/30 px-1 rounded">pip install gradio_client</code> puis redémarre le serveur</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
