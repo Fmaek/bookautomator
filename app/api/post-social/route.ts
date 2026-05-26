@@ -115,31 +115,6 @@ async function postToInstagram(caption: string, igUserId: string, pageToken: str
   return { ok: true, id: published.id };
 }
 
-// ── LinkedIn UGC Posts ───────────────────────────────────────────────────────
-async function postToLinkedIn(text: string, bearerToken: string, authorUrn: string) {
-  const res = await fetch("https://api.linkedin.com/v2/ugcPosts", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${bearerToken}`,
-      "Content-Type": "application/json",
-      "X-Restli-Protocol-Version": "2.0.0",
-    },
-    body: JSON.stringify({
-      author: authorUrn,
-      lifecycleState: "PUBLISHED",
-      specificContent: {
-        "com.linkedin.ugc.ShareContent": {
-          shareCommentary: { text },
-          shareMediaCategory: "NONE",
-        },
-      },
-      visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
-    }),
-  });
-  const data = await res.json() as Record<string, unknown>;
-  if (!res.ok) return { ok: false, error: JSON.stringify((data as { message?: unknown }).message || data) };
-  return { ok: true, id: data.id };
-}
 
 // ── Webhook universel (Make.com / Zapier / n8n) ──────────────────────────────
 async function postToWebhook(webhookUrl: string, payload: Record<string, unknown>) {
@@ -191,13 +166,7 @@ export async function POST(req: NextRequest) {
     } catch (e) { results.instagram = { ok: false, error: String(e) }; }
   }
 
-  // LinkedIn
-  if (ps.includes("linkedin") && credentials.linkedin?.bearerToken && credentials.linkedin?.authorUrn) {
-    try { results.linkedin = await postToLinkedIn(text, credentials.linkedin.bearerToken, credentials.linkedin.authorUrn); }
-    catch (e) { results.linkedin = { ok: false, error: String(e) }; }
-  }
-
-  // Webhook (TikTok, Instagram via Make.com, etc.)
+// Webhook (TikTok, Instagram via Make.com, etc.)
   if (credentials.webhook?.url) {
     const webhookPlatforms = ps.filter(p => ["tiktok", "instagram", "youtube"].includes(p) && !results[p]);
     if (webhookPlatforms.length > 0 || ps.includes("webhook")) {

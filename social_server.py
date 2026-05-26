@@ -104,152 +104,370 @@ def post_instagram(text: str, username: str, password: str, image_base64: Option
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
-# ── Playwright (TikTok, Twitter/X — sans API, via navigateur) ─────────────────
-PLAYWRIGHT_SESSIONS: dict = {}
+# ── Playwright helpers ────────────────────────────────────────────────────────
+async def _find_first(page, selectors: list[str], timeout: int = 3000):
+    """Retourne le premier élément trouvé parmi une liste de sélecteurs."""
+    for sel in selectors:
+        try:
+            el = await page.wait_for_selector(sel, timeout=timeout)
+            if el:
+                return el
+        except Exception:
+            pass
+    return None
 
-async def post_tiktok_playwright(text: str, image_base64: Optional[str] = None) -> dict:
-    if not HAS_PLAYWRIGHT:
-        return {"ok": False, "error": "playwright non installé"}
-    session_file = str(SESSIONS_DIR / "tiktok_session.json")
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)  # visible pour login si besoin
-        context_args = {}
-        if os.path.exists(session_file):
-            context_args["storage_state"] = session_file
-        context = await browser.new_context(**context_args)
-        page = await context.new_page()
-        await page.goto("https://www.tiktok.com/creator-center/upload?lang=fr")
-        await asyncio.sleep(3)
+async def _ensure_logged_in(page, context, session_file: str, platform: str,
+                             login_indicators: list[str]) -> bool:
+    """Vérifie si l'utilisateur est connecté, sinon attend le login manuel."""
+    needs_login = False
+    for ind in login_indicators:
+        if ind in page.url.lower():
+            needs_login = True
+            break
+    if not needs_login:
+        modal = await _find_first(page, [
+            '[data-e2e="login-modal"]', '#login-modal', '[aria-label="Log in"]',
+            'input[name="username"]', 'input[name="email"]',
+        ], timeout=2000)
+        if modal:
+            needs_login = True
 
-        # Detect if logged in
-        if "login" in page.url.lower() or await page.query_selector('[data-e2e="login-modal"]'):
-            print("TikTok: login requis — fais ton login dans la fenêtre ouverte puis appuie sur Entrée ici.")
-            input("Appuie sur Entrée après le login TikTok...")
-            await context.storage_state(path=session_file)
+    if needs_login:
+        print(f"\n⚠  {platform}: fenêtre ouverte — connecte-toi puis APPUIE SUR ENTRÉE ici.")
+        input(f"[Entrée après login {platform}] > ")
+        await context.storage_state(path=session_file)
+        print(f"✓ Session {platform} sauvegardée.")
+        return True
+    return False
 
-        if image_base64:
-            # Save video/image
-            video_path = str(COVERS_DIR / f"tiktok_{uuid.uuid4().hex}.mp4")
-            img_data = base64.b64decode(image_base64.split(",")[-1])
-            Path(video_path).write_bytes(img_data)
-            upload_input = await page.query_selector('input[type="file"]')
-            if upload_input:
-                await upload_input.set_input_files(video_path)
-                await asyncio.sleep(5)
-            Path(video_path).unlink(missing_ok=True)
+def _launch_args(headless: bool) -> dict:
+    return {
+        "headless": headless,
+        "args": [
+            "--no-sandbox", "--disable-blink-features=AutomationControlled",
+            "--disable-infobars", "--start-maximized",
+        ]
+    }
 
-        # Fill caption
-        caption_box = await page.query_selector('[data-text="true"]')
-        if not caption_box:
-            caption_box = await page.query_selector('.public-DraftEditor-content')
-        if caption_box:
-            await caption_box.click()
-            await caption_box.fill(text[:2200])
-            await asyncio.sleep(1)
+async def _human_type(el, text: str, delay: int = 35):
+    """Frappe le texte caractère par caractère (anti-bot)."""
+    await el.click()
+    await el.type(text, delay=delay)
 
-        # Submit
-        post_btn = await page.query_selector('[data-e2e="post_video_button"]')
-        if not post_btn:
-            post_btn = await page.query_selector('button:has-text("Publier")')
-        if not post_btn:
-            post_btn = await page.query_selector('button:has-text("Post")')
-        if post_btn:
-            await post_btn.click()
-            await asyncio.sleep(5)
-            await context.storage_state(path=session_file)
-            await browser.close()
-            return {"ok": True}
-        await browser.close()
-        return {"ok": False, "error": "Bouton Publier non trouvé"}
-
+# ── Twitter/X ─────────────────────────────────────────────────────────────────
 async def post_twitter_playwright(text: str) -> dict:
     if not HAS_PLAYWRIGHT:
         return {"ok": False, "error": "playwright non installé"}
     session_file = str(SESSIONS_DIR / "twitter_session.json")
+    has_session = os.path.exists(session_file)
+
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
-        context_args = {}
-        if os.path.exists(session_file):
-            context_args["storage_state"] = session_file
-        context = await browser.new_context(**context_args)
+        browser = await p.chromium.launch(**_launch_args(headless=has_session))
+        ctx_args: dict = {"user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"}
+        if has_session:
+            ctx_args["storage_state"] = session_file
+        context = await browser.new_context(**ctx_args)
         page = await context.new_page()
-        await page.goto("https://twitter.com/compose/post")
-        await asyncio.sleep(4)
 
-        if "login" in page.url.lower() or "i/flow/login" in page.url:
-            print("Twitter: login requis — fais ton login dans la fenêtre puis appuie sur Entrée.")
-            input("Entrée après login Twitter...")
-            await context.storage_state(path=session_file)
-            await page.goto("https://twitter.com/compose/post")
+        try:
+            # Aller sur X/Twitter
+            await page.goto("https://x.com", wait_until="domcontentloaded")
             await asyncio.sleep(3)
 
-        tweet_box = await page.query_selector('[data-testid="tweetTextarea_0"]')
-        if not tweet_box:
-            await browser.close()
-            return {"ok": False, "error": "Zone de texte non trouvée"}
-        await tweet_box.click()
-        await tweet_box.type(text[:280], delay=20)
-        await asyncio.sleep(1)
+            # Login si nécessaire
+            if "login" in page.url or "i/flow" in page.url or not has_session:
+                await _ensure_logged_in(page, context, session_file, "Twitter/X",
+                                        ["login", "i/flow"])
+                await page.goto("https://x.com", wait_until="domcontentloaded")
+                await asyncio.sleep(3)
 
-        tweet_btn = await page.query_selector('[data-testid="tweetButtonInline"]')
-        if not tweet_btn:
-            tweet_btn = await page.query_selector('[data-testid="tweetButton"]')
-        if tweet_btn:
-            await tweet_btn.click()
-            await asyncio.sleep(3)
-            await context.storage_state(path=session_file)
-            await browser.close()
-            return {"ok": True}
-        await browser.close()
-        return {"ok": False, "error": "Bouton Tweet non trouvé"}
+            # Cliquer sur le bouton "Poster" (compose)
+            compose_btn = await _find_first(page, [
+                'a[href="/compose/post"]',
+                '[data-testid="SideNav_NewTweet_Button"]',
+                '[aria-label="Post"]',
+                '[aria-label="Publier"]',
+            ])
+            if compose_btn:
+                await compose_btn.click()
+                await asyncio.sleep(2)
+            else:
+                # Aller directement sur l'URL de composition
+                await page.goto("https://x.com/compose/post", wait_until="domcontentloaded")
+                await asyncio.sleep(3)
 
+            # Zone de texte
+            tweet_box = await _find_first(page, [
+                '[data-testid="tweetTextarea_0"]',
+                '[data-testid="tweetTextarea_0RichTextInputContainer"]',
+                '.public-DraftEditor-content',
+                '[contenteditable="true"][role="textbox"]',
+            ], timeout=8000)
+            if not tweet_box:
+                await browser.close()
+                return {"ok": False, "error": "Zone de texte introuvable — reconnecte-toi"}
+
+            await _human_type(tweet_box, text[:280])
+            await asyncio.sleep(1.5)
+
+            # Bouton envoyer (avec retry)
+            for attempt in range(3):
+                send_btn = await _find_first(page, [
+                    '[data-testid="tweetButtonInline"]',
+                    '[data-testid="tweetButton"]',
+                    'button[type="button"]:has-text("Post")',
+                    'button[type="button"]:has-text("Publier")',
+                ], timeout=5000)
+                if send_btn:
+                    await send_btn.click()
+                    await asyncio.sleep(4)
+                    await context.storage_state(path=session_file)
+                    await browser.close()
+                    return {"ok": True}
+                await asyncio.sleep(2)
+
+            await browser.close()
+            return {"ok": False, "error": "Bouton Envoyer introuvable après 3 tentatives"}
+
+        except Exception as e:
+            try: await browser.close()
+            except: pass
+            return {"ok": False, "error": f"Erreur Twitter: {str(e)}"}
+
+# ── Facebook ──────────────────────────────────────────────────────────────────
 async def post_facebook_playwright(text: str, image_base64: Optional[str] = None) -> dict:
     if not HAS_PLAYWRIGHT:
         return {"ok": False, "error": "playwright non installé"}
     session_file = str(SESSIONS_DIR / "facebook_session.json")
+    has_session = os.path.exists(session_file)
+
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
-        context_args = {}
-        if os.path.exists(session_file):
-            context_args["storage_state"] = session_file
-        context = await browser.new_context(**context_args)
+        browser = await p.chromium.launch(**_launch_args(headless=has_session))
+        ctx_args: dict = {"user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"}
+        if has_session:
+            ctx_args["storage_state"] = session_file
+        context = await browser.new_context(**ctx_args)
         page = await context.new_page()
-        await page.goto("https://www.facebook.com")
-        await asyncio.sleep(3)
 
-        if "login" in page.url.lower():
-            print("Facebook: login requis — fais ton login dans la fenêtre puis appuie sur Entrée.")
-            input("Entrée après login Facebook...")
-            await context.storage_state(path=session_file)
+        try:
+            await page.goto("https://www.facebook.com", wait_until="domcontentloaded")
+            await asyncio.sleep(4)
 
-        # Click "Créer une publication"
-        create_box = await page.query_selector('[aria-label="Créer une publication"]')
-        if not create_box:
-            create_box = await page.query_selector('[data-testid="status-attachment-mentions-input"]')
-        if not create_box:
-            # Try clicking the post box
-            create_box = await page.query_selector('[role="button"]:has-text("Vous pensez à quoi")')
-        if create_box:
-            await create_box.click()
-            await asyncio.sleep(1)
+            if "login" in page.url or not has_session:
+                await _ensure_logged_in(page, context, session_file, "Facebook", ["login"])
+                await page.goto("https://www.facebook.com", wait_until="domcontentloaded")
+                await asyncio.sleep(4)
 
-        text_area = await page.query_selector('[aria-label="À quoi pensez-vous ?"]')
-        if not text_area:
-            text_area = await page.query_selector('[contenteditable="true"]')
-        if text_area:
+            # Cliquer sur la boîte "Créer une publication"
+            create_box = await _find_first(page, [
+                '[aria-label="Créer une publication"]',
+                '[aria-label="Create a post"]',
+                '[aria-label="Quoi de neuf"]',
+                '[data-testid="status-attachment-mentions-input"]',
+                'div[role="button"][tabindex="0"]:has-text("pensez")',
+                'div[role="button"][tabindex="0"]:has-text("quoi")',
+                'div[role="button"][tabindex="0"]:has-text("neuf")',
+            ], timeout=10000)
+
+            if create_box:
+                await create_box.click()
+                await asyncio.sleep(2)
+
+            # Zone de saisie du post
+            text_area = await _find_first(page, [
+                '[aria-label="À quoi pensez-vous ?"]',
+                '[aria-label="What\'s on your mind"]',
+                'div[contenteditable="true"][role="textbox"]',
+                'div[contenteditable="true"][data-lexical-editor="true"]',
+                '.notranslate[contenteditable="true"]',
+            ], timeout=10000)
+
+            if not text_area:
+                await browser.close()
+                return {"ok": False, "error": "Zone de saisie Facebook introuvable"}
+
             await text_area.click()
-            await text_area.type(text, delay=15)
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
+            # Utiliser keyboard pour Facebook (plus fiable que type())
+            await page.keyboard.type(text, delay=25)
+            await asyncio.sleep(2)
 
-        post_btn = await page.query_selector('[aria-label="Publier"]')
-        if post_btn:
-            await post_btn.click()
-            await asyncio.sleep(3)
-            await context.storage_state(path=session_file)
+            # Uploader image si fournie
+            if image_base64:
+                try:
+                    img_path = COVERS_DIR / f"fb_{uuid.uuid4().hex}.jpg"
+                    img_data = base64.b64decode(image_base64.split(",")[-1])
+                    img_path.write_bytes(img_data)
+                    photo_btn = await _find_first(page, [
+                        '[aria-label="Photo/vidéo"]',
+                        '[aria-label="Photo/Video"]',
+                        'input[type="file"][accept*="image"]',
+                    ], timeout=3000)
+                    if photo_btn:
+                        await photo_btn.set_input_files(str(img_path))
+                        await asyncio.sleep(4)
+                    img_path.unlink(missing_ok=True)
+                except Exception:
+                    pass  # Image optionnelle, on continue sans
+
+            # Bouton Publier avec retry
+            for attempt in range(4):
+                post_btn = await _find_first(page, [
+                    '[aria-label="Publier"]',
+                    '[aria-label="Post"]',
+                    'div[role="button"]:has-text("Publier")',
+                    'div[role="button"]:has-text("Post")',
+                    'button:has-text("Publier")',
+                    'button:has-text("Post")',
+                ], timeout=5000)
+                if post_btn:
+                    await post_btn.click()
+                    await asyncio.sleep(5)
+                    await context.storage_state(path=session_file)
+                    await browser.close()
+                    return {"ok": True}
+                await asyncio.sleep(2)
+
             await browser.close()
-            return {"ok": True}
-        await browser.close()
-        return {"ok": False, "error": "Bouton Publier non trouvé"}
+            return {"ok": False, "error": "Bouton Publier introuvable après 4 tentatives"}
+
+        except Exception as e:
+            try: await browser.close()
+            except: pass
+            return {"ok": False, "error": f"Erreur Facebook: {str(e)}"}
+
+# ── TikTok ────────────────────────────────────────────────────────────────────
+async def post_tiktok_playwright(text: str, image_base64: Optional[str] = None) -> dict:
+    """
+    TikTok exige un fichier vidéo. Si image_base64 contient une vidéo (.webm/.mp4),
+    elle est uploadée. Sinon on crée une vidéo texte simple (image fixe).
+    """
+    if not HAS_PLAYWRIGHT:
+        return {"ok": False, "error": "playwright non installé"}
+    session_file = str(SESSIONS_DIR / "tiktok_session.json")
+    has_session = os.path.exists(session_file)
+
+    # Préparer le fichier vidéo à uploader
+    video_path: Optional[str] = None
+    tmp_created = False
+    if image_base64:
+        try:
+            raw = base64.b64decode(image_base64.split(",")[-1])
+            ext = "webm" if image_base64.startswith("data:video/webm") else \
+                  "mp4"  if image_base64.startswith("data:video/mp4")  else "webm"
+            video_path = str(COVERS_DIR / f"tiktok_{uuid.uuid4().hex}.{ext}")
+            Path(video_path).write_bytes(raw)
+            tmp_created = True
+        except Exception:
+            video_path = None
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(**_launch_args(headless=False))  # toujours visible (TikTok détecte headless)
+        ctx_args: dict = {
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "viewport": {"width": 1280, "height": 800},
+        }
+        if has_session:
+            ctx_args["storage_state"] = session_file
+        context = await browser.new_context(**ctx_args)
+        # Masquer l'automatisation
+        await context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            window.chrome = {runtime: {}};
+        """)
+        page = await context.new_page()
+
+        try:
+            await page.goto("https://www.tiktok.com", wait_until="domcontentloaded")
+            await asyncio.sleep(4)
+
+            if "login" in page.url or not has_session:
+                await _ensure_logged_in(page, context, session_file, "TikTok", ["login"])
+                await asyncio.sleep(2)
+
+            # Aller sur la page d'upload
+            await page.goto("https://www.tiktok.com/creator-center/upload?lang=fr",
+                            wait_until="domcontentloaded")
+            await asyncio.sleep(5)
+
+            # Si toujours redirigé vers login
+            if "login" in page.url:
+                await _ensure_logged_in(page, context, session_file, "TikTok", ["login"])
+                await page.goto("https://www.tiktok.com/creator-center/upload?lang=fr",
+                                wait_until="domcontentloaded")
+                await asyncio.sleep(5)
+
+            # Upload vidéo
+            if video_path:
+                upload_input = await _find_first(page, [
+                    'input[type="file"][accept*="video"]',
+                    'input[type="file"]',
+                ], timeout=10000)
+                if upload_input:
+                    await upload_input.set_input_files(video_path)
+                    print("✓ TikTok: vidéo en cours d'upload...")
+                    # Attendre que l'upload soit traité (barre de progression disparaît)
+                    await asyncio.sleep(8)
+                    # Attendre la disparition du loader
+                    try:
+                        await page.wait_for_selector('.upload-progress', state="hidden", timeout=30000)
+                    except Exception:
+                        await asyncio.sleep(10)
+                else:
+                    await browser.close()
+                    if tmp_created and video_path: Path(video_path).unlink(missing_ok=True)
+                    return {"ok": False, "error": "Bouton upload TikTok introuvable"}
+            else:
+                await browser.close()
+                return {"ok": False, "error": "TikTok requiert une vidéo. Génère une vidéo dans l'onglet Vidéos IA."}
+
+            # Remplir la légende
+            caption_selectors = [
+                '[data-testid="caption-content-text"]',
+                '.DraftEditor-editorContainer [data-text="true"]',
+                '.public-DraftEditor-content',
+                '[contenteditable="true"][data-contents="true"]',
+                'div[contenteditable="true"]',
+            ]
+            caption_box = await _find_first(page, caption_selectors, timeout=8000)
+            if caption_box:
+                await caption_box.click()
+                await asyncio.sleep(0.5)
+                await page.keyboard.type(text[:2200], delay=20)
+                await asyncio.sleep(1.5)
+
+            # Bouton Publier avec retry
+            for attempt in range(5):
+                post_btn = await _find_first(page, [
+                    '[data-e2e="post_video_button"]',
+                    'button:has-text("Publier")',
+                    'button:has-text("Post")',
+                    'button:has-text("Submit")',
+                    'button[type="submit"]',
+                ], timeout=5000)
+                if post_btn:
+                    is_disabled = await post_btn.get_attribute("disabled")
+                    if is_disabled is None:  # not disabled
+                        await post_btn.click()
+                        await asyncio.sleep(6)
+                        await context.storage_state(path=session_file)
+                        await browser.close()
+                        if tmp_created and video_path: Path(video_path).unlink(missing_ok=True)
+                        return {"ok": True}
+                await asyncio.sleep(3)
+                print(f"TikTok: tentative {attempt+1}/5 bouton publier...")
+
+            await browser.close()
+            if tmp_created and video_path: Path(video_path).unlink(missing_ok=True)
+            return {"ok": False, "error": "Bouton Publier TikTok introuvable après 5 tentatives"}
+
+        except Exception as e:
+            try: await browser.close()
+            except: pass
+            if tmp_created and video_path:
+                try: Path(video_path).unlink(missing_ok=True)
+                except: pass
+            return {"ok": False, "error": f"Erreur TikTok: {str(e)}"}
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 from fastapi.responses import HTMLResponse
