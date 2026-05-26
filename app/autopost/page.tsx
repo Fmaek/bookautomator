@@ -22,7 +22,7 @@ interface QueueItem {
   results?: Record<string, { ok: boolean; error?: string }>;
 }
 
-interface Creds { instagram: { username: string; password: string }; tiktok_session: boolean; twitter_session: boolean; facebook_session: boolean }
+interface Creds { instagram: { username: string; password: string }; tiktok_session: boolean; twitter_session: boolean; facebook_session: boolean; pexelsKey: string; hfToken: string; }
 
 // ── Video constants ────────────────────────────────────────────────────────────
 const VIDEO_TYPES = [
@@ -190,22 +190,83 @@ function drawParticles(ctx: CanvasRenderingContext2D, W: number, H: number, acce
   ctx.globalAlpha = 1;
 }
 
+// ── Loader vidéo Pexels ───────────────────────────────────────────────────────
+async function loadBgVideo(url: string): Promise<HTMLVideoElement | null> {
+  return new Promise(resolve => {
+    const v = document.createElement("video");
+    v.crossOrigin = "anonymous"; v.muted = true; v.loop = true; v.playsInline = true;
+    v.oncanplay = () => { v.play().catch(() => {}); resolve(v); };
+    v.onerror = () => resolve(null);
+    v.src = url;
+    v.load();
+    setTimeout(() => resolve(null), 12000); // timeout 12s
+  });
+}
+
 // ── Renderer principal ────────────────────────────────────────────────────────
 async function renderVideoToBlob(
   slides: Slide[], fmt: typeof FORMATS[0], thm: typeof THEMES[0],
-  coverDataUrl?: string, videoType = "teaser", fps = 30
+  coverDataUrl?: string, videoType = "teaser", fps = 30,
+  pexelsKey?: string, hfToken?: string,
+  bookCategory?: string, bookTitle?: string,
+  onStage?: (stage: string) => void
 ): Promise<Blob> {
   const W = fmt.w, H = fmt.h;
-  const barH = Math.round(H * 0.075); // letterbox
+  const barH = Math.round(H * 0.075);
   const totalSec = slides.reduce((s, sl) => s + sl.duration, 0);
 
   const canvas = document.createElement("canvas"); canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext("2d")!;
 
-  // Audio
+  // ── Audio ──────────────────────────────────────────────────────────────────
   const audioCtx = new AudioContext();
   const audioDest = audioCtx.createMediaStreamDestination();
+
+  // Toujours générer le synth ambiant (fallback / sous-couche)
   buildCinematicAudio(audioCtx, audioDest, thm.id, videoType, totalSec);
+
+  // MusicGen IA (si token HF fourni)
+  if (hfToken) {
+    onStage?.("🎵 Génération de la musique IA (MusicGen)…");
+    try {
+      const musicRes = await fetch("/api/generate-music", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-hf-token": hfToken },
+        body: JSON.stringify({ videoType, theme: thm.id, duration: totalSec }),
+        signal: AbortSignal.timeout(130_000),
+      });
+      if (musicRes.ok) {
+        const audioData = await musicRes.arrayBuffer();
+        const decodedAudio = await audioCtx.decodeAudioData(audioData);
+        const musicSrc = audioCtx.createBufferSource();
+        musicSrc.buffer = decodedAudio;
+        musicSrc.loop = decodedAudio.duration < totalSec;
+        const musicGain = audioCtx.createGain();
+        // IA music plus fort, synth ambiant en sous-couche légère
+        musicGain.gain.setValueAtTime(0, audioCtx.currentTime);
+        musicGain.gain.linearRampToValueAtTime(0.75, audioCtx.currentTime + 2);
+        musicGain.gain.setValueAtTime(0.75, audioCtx.currentTime + totalSec - 2);
+        musicGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + totalSec);
+        musicSrc.connect(musicGain); musicGain.connect(audioDest);
+        musicSrc.start();
+      }
+    } catch (e) { console.warn("MusicGen indisponible, synth ambiant utilisé:", e); }
+  }
+
+  // ── Vidéo Pexels en fond ────────────────────────────────────────────────────
+  let bgVideo: HTMLVideoElement | null = null;
+  if (pexelsKey) {
+    onStage?.("🎬 Chargement du fond vidéo cinématique (Pexels)…");
+    try {
+      const pvRes = await fetch("/api/pexels-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-pexels-key": pexelsKey },
+        body: JSON.stringify({ category: bookCategory, title: bookTitle }),
+      });
+      const pvData = await pvRes.json() as { url?: string };
+      if (pvData.url) bgVideo = await loadBgVideo(pvData.url);
+    } catch (e) { console.warn("Pexels indisponible:", e); }
+  }
 
   // Stream combiné vidéo + audio
   const mime = ["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"]
@@ -239,14 +300,26 @@ async function renderVideoToBlob(
       const fade = Math.min(fadeIn, fadeOut);
 
       // ── Fond ──────────────────────────────────────────────────────────────
-      const bg = ctx.createLinearGradient(0, 0, W*0.7, H);
-      bg.addColorStop(0, thm.bg1); bg.addColorStop(1, thm.bg2);
-      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-
-      // Lueur centrale (ambiance)
-      const glow = ctx.createRadialGradient(W/2, H*0.4, 0, W/2, H*0.4, W*0.6);
-      glow.addColorStop(0, thm.accent + "1a"); glow.addColorStop(1, "transparent");
-      ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+      if (bgVideo && bgVideo.readyState >= 2) {
+        // Fond vidéo Pexels — crop center-fill
+        const vw = bgVideo.videoWidth || W, vh = bgVideo.videoHeight || H;
+        const scale = Math.max(W / vw, H / vh);
+        const dw = vw * scale, dh = vh * scale;
+        ctx.drawImage(bgVideo, (W - dw) / 2, (H - dh) / 2, dw, dh);
+        // Overlay couleur du thème (50% opacité pour garder identité)
+        const bg2 = ctx.createLinearGradient(0, 0, W*0.6, H);
+        bg2.addColorStop(0, thm.bg1 + "99"); bg2.addColorStop(1, thm.bg2 + "bb");
+        ctx.fillStyle = bg2; ctx.fillRect(0, 0, W, H);
+      } else {
+        // Fallback gradient pur
+        const bg = ctx.createLinearGradient(0, 0, W*0.7, H);
+        bg.addColorStop(0, thm.bg1); bg.addColorStop(1, thm.bg2);
+        ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+        // Lueur centrale
+        const glow = ctx.createRadialGradient(W/2, H*0.4, 0, W/2, H*0.4, W*0.6);
+        glow.addColorStop(0, thm.accent + "1a"); glow.addColorStop(1, "transparent");
+        ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+      }
 
       drawParticles(ctx, W, H, thm.accent, gFrame);
 
@@ -341,6 +414,8 @@ async function renderVideoToBlob(
 
   await new Promise<void>(r => { rec.onstop = () => r(); rec.stop(); });
   try { await audioCtx.close(); } catch { /* ignore */ }
+  try { bgVideo?.pause(); } catch { /* ignore */ }
+  onStage?.("✅ Vidéo prête !");
   return new Blob(chunks, { type: mime });
 }
 
@@ -362,6 +437,7 @@ export default function AutoPostPage() {
   const [activeVariant, setActiveVariant] = useState(0);
   const [rendering, setRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState(0);
+  const [renderStage, setRenderStage] = useState("");
   const [videoBlobUrl, setVideoBlobUrl] = useState<string | null>(null);
   const [videoCaption, setVideoCaption] = useState("");
 
@@ -379,7 +455,7 @@ export default function AutoPostPage() {
   const [queueFilter, setQueueFilter] = useState<"all" | "pending" | "done">("all");
 
   // Credentials (stored in localStorage, never server-side)
-  const [creds, setCreds] = useState<Creds>({ instagram: { username: "", password: "" }, tiktok_session: false, twitter_session: false, facebook_session: false });
+  const [creds, setCreds] = useState<Creds>({ instagram: { username: "", password: "" }, tiktok_session: false, twitter_session: false, facebook_session: false, pexelsKey: "", hfToken: "" });
   const [showPwd, setShowPwd] = useState(false);
   const [loginLoading, setLoginLoading] = useState<string | null>(null);
   const [loginMsg, setLoginMsg] = useState("");
@@ -501,7 +577,7 @@ export default function AutoPostPage() {
 
   const renderVideo = async () => {
     if (!script) return;
-    setRendering(true); setRenderProgress(0); setVideoBlobUrl(null);
+    setRendering(true); setRenderProgress(0); setVideoBlobUrl(null); setRenderStage("🎬 Préparation…");
     try {
       let slides: Slide[] = [];
       if (videoType === "teaser" || videoType === "promo") {
@@ -520,7 +596,13 @@ export default function AutoPostPage() {
       slides.push({ text: book?.title || "", duration: 4, style: "title" });
       const total = slides.reduce((s, sl) => s + sl.duration, 0);
       let elapsed = 0; const t = setInterval(() => { elapsed += 0.5; setRenderProgress(Math.min(95, Math.round(elapsed / total * 100))); }, 500);
-      const blob = await renderVideoToBlob(slides, fmt, thm, book?.coverDataUrl, videoType);
+      const blob = await renderVideoToBlob(
+        slides, fmt, thm, book?.coverDataUrl, videoType, 30,
+        creds.pexelsKey || undefined,
+        creds.hfToken || undefined,
+        book?.category, book?.title,
+        (stage) => setRenderStage(stage)
+      );
       clearInterval(t); setRenderProgress(100); setVideoBlobUrl(URL.createObjectURL(blob));
     } catch (e) { console.error(e); }
     setRendering(false);
@@ -828,7 +910,19 @@ export default function AutoPostPage() {
                   {rendering ? <Loader2 size={16} className="animate-spin" /> : <Film size={16} />}
                   {rendering ? `Rendu ${renderProgress}%…` : "Générer la vidéo"}
                 </button>
-                {rendering && <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4"><div className="w-full bg-white/10 rounded-full h-2"><div className="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 rounded-full transition-all" style={{ width: `${renderProgress}%` }} /></div></div>}
+                {rendering && (
+                  <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 space-y-2">
+                    <p className="text-white/50 text-xs">{renderStage}</p>
+                    <div className="w-full bg-white/10 rounded-full h-2">
+                      <div className="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 rounded-full transition-all duration-500" style={{ width: `${renderProgress}%` }} />
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      {creds.pexelsKey && <span className="text-xs px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-lg">🎬 Pexels</span>}
+                      {creds.hfToken && <span className="text-xs px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded-lg">🎵 MusicGen IA</span>}
+                      {!creds.pexelsKey && !creds.hfToken && <span className="text-xs text-white/30">Synth ambiant · Ajoute tes clés IA pour plus</span>}
+                    </div>
+                  </div>
+                )}
                 {videoBlobUrl && (
                   <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 space-y-3">
                     <p className="text-emerald-400 text-sm font-semibold flex items-center gap-1.5"><CheckCircle size={14} /> Vidéo prête !</p>
@@ -918,6 +1012,37 @@ export default function AutoPostPage() {
               {loginMsg}
             </div>
           )}
+
+          {/* ── Clés IA Vidéo (gratuites) ────────────────────────────── */}
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 space-y-4">
+            <div>
+              <p className="text-white font-semibold text-sm mb-0.5">🎬 Pexels — Fond vidéo IA</p>
+              <p className="text-white/40 text-xs mb-2">Compte gratuit → <a href="https://www.pexels.com/api/" target="_blank" className="text-blue-400 underline">pexels.com/api</a> · Copie ta clé ici</p>
+              <input
+                type="password"
+                placeholder="Clé API Pexels (gratuit)"
+                value={creds.pexelsKey}
+                onChange={e => saveCreds({ ...creds, pexelsKey: e.target.value })}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50"
+              />
+              {creds.pexelsKey && <p className="text-emerald-400 text-xs mt-1">✓ Fonds cinématiques Pexels activés</p>}
+            </div>
+            <div>
+              <p className="text-white font-semibold text-sm mb-0.5">🎵 HuggingFace — Musique IA (MusicGen)</p>
+              <p className="text-white/40 text-xs mb-2">Compte gratuit → <a href="https://huggingface.co/settings/tokens" target="_blank" className="text-purple-400 underline">huggingface.co/settings/tokens</a> · Token READ gratuit</p>
+              <input
+                type="password"
+                placeholder="Token HuggingFace hf_... (gratuit)"
+                value={creds.hfToken}
+                onChange={e => saveCreds({ ...creds, hfToken: e.target.value })}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500/50"
+              />
+              {creds.hfToken && <p className="text-emerald-400 text-xs mt-1">✓ Musique IA MusicGen (Meta/Facebook) activée</p>}
+            </div>
+            {!creds.pexelsKey && !creds.hfToken && (
+              <p className="text-white/30 text-xs">Sans ces clés : synth ambiant + gradient (déjà bien). Avec : vraie vidéo + vraie musique IA 🎬</p>
+            )}
+          </div>
 
           {!connected && (
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4">
