@@ -1,17 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
-import axios from "axios";
+import { request as httpsReq } from "https";
 
 // ── Augmenter le timeout Vercel (60s max sur Hobby, 300s sur Pro) ─────────────
 export const maxDuration = 60;
 
-// ── HuggingFace Router (nouveau domaine, remplace api-inference.huggingface.co) ─
-const HF_ROUTER = "https://router.huggingface.co/v1/chat/completions";
+// ── HuggingFace Router ────────────────────────────────────────────────────────
+const HF_HOST    = "router.huggingface.co";
+const HF_PATH    = "/v1/chat/completions";
 
 // Cascade : 72B préféré → 7B fallback
 const MODELS = [
   "Qwen/Qwen2.5-72B-Instruct",
   "Qwen/Qwen2.5-7B-Instruct",
 ];
+
+// Requête HTTPS via module natif Node.js (contourne fetch/polyfill Vercel)
+function httpsPost(host: string, path: string, headers: Record<string, string>, body: string, timeoutMs: number): Promise<{ status: number; body: string; headers: Record<string, string> }> {
+  return new Promise((resolve, reject) => {
+    const bodyBuf = Buffer.from(body, "utf-8");
+    const req = httpsReq(
+      { hostname: host, path, method: "POST", headers: { ...headers, "Content-Length": bodyBuf.length } },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => chunks.push(c));
+        res.on("end", () => resolve({
+          status: res.statusCode ?? 0,
+          body: Buffer.concat(chunks).toString("utf-8"),
+          headers: res.headers as Record<string, string>,
+        }));
+      }
+    );
+    req.setTimeout(timeoutMs, () => { req.destroy(); reject(new Error(`Timeout ${timeoutMs}ms`)); });
+    req.on("error", reject);
+    req.write(bodyBuf);
+    req.end();
+  });
+}
 
 async function callQwen(
   hfToken: string,
@@ -23,29 +47,23 @@ async function callQwen(
   for (const model of MODELS) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const resp = await axios.post(
-          HF_ROUTER,
-          { model, messages, max_tokens: maxTokens, temperature, stream: false },
-          {
-            headers: {
-              Authorization: `Bearer ${hfToken}`,
-              "Content-Type": "application/json",
-            },
-            timeout: 55_000,
-            validateStatus: (s) => s < 600,
-          }
-        );
-        if (resp.status === 503 || resp.status === 429) {
-          const wait = Math.min(parseInt(resp.headers["retry-after"] || "10", 10) * 1000, 12_000);
+        const body = JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, stream: false });
+        const res = await httpsPost(HF_HOST, HF_PATH, {
+          Authorization: `Bearer ${hfToken}`,
+          "Content-Type": "application/json",
+        }, body, 55_000);
+
+        if (res.status === 503 || res.status === 429) {
+          const wait = Math.min(parseInt(res.headers["retry-after"] || "10", 10) * 1000, 12_000);
           await new Promise(r => setTimeout(r, wait));
           continue;
         }
-        if (resp.status >= 400) {
-          lastError = `HF ${resp.status}: ${JSON.stringify(resp.data).substring(0, 200)}`;
+        if (res.status >= 400) {
+          lastError = `HF ${res.status}: ${res.body.substring(0, 200)}`;
           break; // modèle suivant
         }
-        return (resp.data as { choices: { message: { content: string } }[] })
-          .choices[0]?.message?.content ?? "";
+        const data = JSON.parse(res.body) as { choices: { message: { content: string } }[] };
+        return data.choices[0]?.message?.content ?? "";
       } catch (e) {
         lastError = String(e);
         console.error(`[callQwen] ${model} attempt ${attempt}:`, lastError);
