@@ -155,10 +155,12 @@ def build_wan_prompt(category: str, video_type: str, theme: str) -> tuple[str, s
     return prompt, _WAN_NEG
 
 async def generate_wan_video_bytes(category: str, video_type: str, theme: str,
-                                   fmt: str = "portrait") -> Optional[bytes]:
-    """Génère une vidéo background Wan2.1 (local GPU ou HF Spaces)."""
+                                   fmt: str = "portrait",
+                                   hf_token: Optional[str] = None) -> Optional[bytes]:
+    """Génère une vidéo background Wan2.1 (local GPU → HF Spaces → HF Inference API)."""
     global _wan_pipe
     prompt, negative = build_wan_prompt(category, video_type, theme)
+    W, H = (480, 832) if fmt == "portrait" else (832, 480) if fmt == "landscape" else (624, 624)
 
     # ── Tentative 1 : GPU local ──────────────────────────────────────────────
     if HAS_WAN_LOCAL:
@@ -173,7 +175,7 @@ async def generate_wan_video_bytes(category: str, video_type: str, theme: str,
             print(f"🎬 Wan2.1 local génère : {prompt[:80]}…")
             out = _wan_pipe(
                 prompt=prompt, negative_prompt=negative,
-                height=480, width=832 if fmt != "portrait" else 480,
+                height=H, width=W,
                 num_frames=49, guidance_scale=5.0, num_inference_steps=25,
             ).frames[0]
             tmp = COVERS_DIR / f"wan_{uuid.uuid4().hex}.mp4"
@@ -184,30 +186,44 @@ async def generate_wan_video_bytes(category: str, video_type: str, theme: str,
         except Exception as e:
             print(f"⚠ Wan2.1 local : {e}")
 
-    # ── Tentative 2 : HuggingFace Spaces (gratuit, sans GPU) ────────────────
+    # ── Tentative 2 : HuggingFace Spaces (avec token pour meilleur accès) ───
     if HAS_GRADIO:
+        # Spaces publics Wan2.1 — avec ou sans auth
         spaces = [
             "Wan-AI/Wan2.1-T2V-1.3B",
+            "multimodalart/wan",
+            "fffiloni/wan-t2v",
             "Wan-Video/Wan2.1-T2V-1.3B",
         ]
+        gradio_kwargs = {}
+        if hf_token:
+            gradio_kwargs["hf_token"] = hf_token  # accès authentifié + meilleurs quotas
         for space in spaces:
             try:
                 print(f"🌐 Wan2.1 via HF Spaces ({space})…")
-                client = GradioClient(space, verbose=False)
-                # Essayer différents noms d'API courants
-                for api_name in ["/generate_video", "/predict", "/infer", "/run"]:
+                client = GradioClient(space, verbose=False, **gradio_kwargs)
+                # Essayer différentes signatures d'API
+                api_calls = [
+                    # (api_name, args)
+                    ("/generate_video", (prompt, negative, 5.0, 25, 49)),
+                    ("/predict",        (prompt, negative, 5.0, 25, 49)),
+                    ("/infer",          (prompt, negative, 49, 5.0, 25)),
+                    ("/run",            (prompt,)),
+                    ("/generate",       (prompt, negative)),
+                ]
+                for api_name, args in api_calls:
                     try:
-                        result = client.predict(
-                            prompt, negative, 5.0, 25, 49,
-                            api_name=api_name
-                        )
-                        # result = path vers fichier vidéo local temporaire
-                        vid_path = result if isinstance(result, str) else (
-                            result.get("video") or result.get("value") if isinstance(result, dict) else None
-                        )
+                        result = client.predict(*args, api_name=api_name)
+                        vid_path = None
+                        if isinstance(result, str):
+                            vid_path = result
+                        elif isinstance(result, dict):
+                            vid_path = result.get("video") or result.get("value") or result.get("path")
+                        elif isinstance(result, (list, tuple)) and result:
+                            vid_path = result[0] if isinstance(result[0], str) else None
                         if vid_path and os.path.exists(str(vid_path)):
                             data = Path(vid_path).read_bytes()
-                            print(f"✓ Wan2.1 HF Spaces OK ({space})")
+                            print(f"✓ Wan2.1 HF Spaces OK ({space} / {api_name})")
                             return data
                     except Exception:
                         continue
@@ -215,7 +231,28 @@ async def generate_wan_video_bytes(category: str, video_type: str, theme: str,
                 print(f"⚠ Wan2.1 HF Spaces {space}: {e}")
                 continue
 
-    print("⚠ Wan2.1 indisponible (ni GPU local ni HF Spaces)")
+    # ── Tentative 3 : HF Inference API (text-to-video, si disponible) ───────
+    if hf_token:
+        import requests as _req
+        models_to_try = [
+            "Wan-AI/Wan2.1-T2V-1.3B",
+        ]
+        for model in models_to_try:
+            try:
+                print(f"🌐 Wan2.1 via HF Inference API ({model})…")
+                r = _req.post(
+                    f"https://api-inference.huggingface.co/models/{model}",
+                    headers={"Authorization": f"Bearer {hf_token}"},
+                    json={"inputs": prompt, "parameters": {"negative_prompt": negative}},
+                    timeout=120,
+                )
+                if r.status_code == 200 and r.headers.get("content-type", "").startswith("video"):
+                    print(f"✓ Wan2.1 HF Inference API OK ({model})")
+                    return r.content
+            except Exception as e:
+                print(f"⚠ Wan2.1 HF Inference API : {e}")
+
+    print("⚠ Wan2.1 indisponible — utilisation du fond Pexels ou gradient")
     return None
 
 # ── Helpers de rendu vidéo ────────────────────────────────────────────────────
@@ -425,6 +462,7 @@ class VideoGenRequest(BaseModel):
     book_category: str = ""
     cover_base64: Optional[str] = None
     pexels_key: Optional[str] = None
+    hf_token: Optional[str] = None      # token HuggingFace (MusicGen, Wan2.1)
     music_base64: Optional[str] = None  # audio FLAC en base64
     use_wan: bool = False               # utiliser Wan2.1 pour le fond
 
@@ -1078,10 +1116,11 @@ async def generate_video_hd(req: VideoGenRequest):
         return frames
 
     # 1. Wan2.1 (IA générative — fond unique)
-    if req.use_wan and (HAS_WAN_LOCAL or HAS_GRADIO):
+    if req.use_wan and (HAS_WAN_LOCAL or HAS_GRADIO or req.hf_token):
         print("🎬 Génération fond Wan2.1…")
         wan_bytes = await generate_wan_video_bytes(
-            req.book_category, "teaser", req.theme, req.format
+            req.book_category, "teaser", req.theme, req.format,
+            hf_token=req.hf_token
         )
         if wan_bytes:
             bg_frames = _extract_bg_frames(wan_bytes, 300)

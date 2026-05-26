@@ -738,8 +738,9 @@ export default function AutoPostPage() {
       book_category: book?.category || "",
       cover_base64: book?.coverDataUrl || null,
       pexels_key: creds.pexelsKey || null,
+      hf_token: creds.hfToken || null,
       music_base64: musicB64,
-      use_wan: useWan && wanAvailable,
+      use_wan: useWan && (wanAvailable || !!creds.hfToken),
     };
 
     const ticker = setInterval(() => setRenderProgress(p => Math.min(90, p + 2)), 800);
@@ -1069,11 +1070,11 @@ export default function AutoPostPage() {
                   <div className="grid grid-cols-3 gap-1.5">
                     {[
                       { id: false, label: "Gradient", sub: "Toujours dispo", active: !useWan },
-                      { id: true,  label: "Wan2.1 IA", sub: wanAvailable ? "IA générative" : "Non installé", active: useWan },
+                      { id: true,  label: "Wan2.1 IA", sub: (wanAvailable || creds.hfToken) ? "IA générative 🤖" : "Non installé", active: useWan },
                     ].map(opt => (
                       <button key={String(opt.id)}
                         onClick={() => { if (!opt.id || wanAvailable) setUseWan(opt.id as boolean); }}
-                        disabled={opt.id === true && !wanAvailable}
+                        disabled={opt.id === true && !wanAvailable && !creds.hfToken}
                         className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg border text-xs transition-all disabled:opacity-30 ${opt.active ? "border-violet-500/50 bg-violet-500/10 text-white" : "border-white/[0.05] text-white/40"}`}>
                         <span className="font-medium">{opt.label}</span>
                         <span className="text-white/30 text-[10px]">{opt.sub}</span>
