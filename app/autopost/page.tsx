@@ -22,7 +22,7 @@ interface QueueItem {
   results?: Record<string, { ok: boolean; error?: string }>;
 }
 
-interface Creds { instagram: { username: string; password: string }; tiktok_session: boolean; twitter_session: boolean; facebook_session: boolean; pexelsKey: string; hfToken: string; }
+interface Creds { instagram: { username: string; password: string }; tiktok_session: boolean; twitter_session: boolean; facebook_session: boolean; pexelsKey: string; }
 
 // ── Video constants ────────────────────────────────────────────────────────────
 const VIDEO_TYPES = [
@@ -207,7 +207,7 @@ async function loadBgVideo(url: string): Promise<HTMLVideoElement | null> {
 async function renderVideoToBlob(
   slides: Slide[], fmt: typeof FORMATS[0], thm: typeof THEMES[0],
   coverDataUrl?: string, videoType = "teaser", fps = 30,
-  pexelsKey?: string, hfToken?: string,
+  pexelsKey?: string,
   bookCategory?: string, bookTitle?: string,
   onStage?: (stage: string) => void
 ): Promise<Blob> {
@@ -229,33 +229,30 @@ async function renderVideoToBlob(
   // Toujours générer le synth ambiant (fallback / sous-couche)
   buildCinematicAudio(audioCtx, audioDest, thm.id, videoType, totalSec);
 
-  // MusicGen IA (si token HF fourni)
-  if (hfToken) {
-    onStage?.("🎵 Génération de la musique IA (MusicGen)…");
-    try {
-      const musicRes = await fetch("/api/generate-music", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-hf-token": hfToken },
-        body: JSON.stringify({ videoType, theme: thm.id, duration: totalSec }),
-        signal: AbortSignal.timeout(130_000),
-      });
-      if (musicRes.ok) {
-        const audioData = await musicRes.arrayBuffer();
-        const decodedAudio = await audioCtx.decodeAudioData(audioData);
-        const musicSrc = audioCtx.createBufferSource();
-        musicSrc.buffer = decodedAudio;
-        musicSrc.loop = decodedAudio.duration < totalSec;
-        const musicGain = audioCtx.createGain();
-        // IA music plus fort, synth ambiant en sous-couche légère
-        musicGain.gain.setValueAtTime(0, audioCtx.currentTime);
-        musicGain.gain.linearRampToValueAtTime(0.75, audioCtx.currentTime + 2);
-        musicGain.gain.setValueAtTime(0.75, audioCtx.currentTime + totalSec - 2);
-        musicGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + totalSec);
-        musicSrc.connect(musicGain); musicGain.connect(audioDest);
-        musicSrc.start();
-      }
-    } catch (e) { console.warn("MusicGen indisponible, synth ambiant utilisé:", e); }
-  }
+  // MusicGen IA (toujours disponible — token côté serveur)
+  onStage?.("🎵 Génération de la musique IA (MusicGen)…");
+  try {
+    const musicRes = await fetch("/api/generate-music", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ videoType, theme: thm.id, duration: totalSec }),
+      signal: AbortSignal.timeout(130_000),
+    });
+    if (musicRes.ok) {
+      const audioData = await musicRes.arrayBuffer();
+      const decodedAudio = await audioCtx.decodeAudioData(audioData);
+      const musicSrc = audioCtx.createBufferSource();
+      musicSrc.buffer = decodedAudio;
+      musicSrc.loop = decodedAudio.duration < totalSec;
+      const musicGain = audioCtx.createGain();
+      musicGain.gain.setValueAtTime(0, audioCtx.currentTime);
+      musicGain.gain.linearRampToValueAtTime(0.75, audioCtx.currentTime + 2);
+      musicGain.gain.setValueAtTime(0.75, audioCtx.currentTime + totalSec - 2);
+      musicGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + totalSec);
+      musicSrc.connect(musicGain); musicGain.connect(audioDest);
+      musicSrc.start();
+    }
+  } catch (e) { console.warn("MusicGen indisponible, synth ambiant utilisé:", e); }
 
   // ── Vidéo Pexels en fond ────────────────────────────────────────────────────
   let bgVideo: HTMLVideoElement | null = null;
@@ -521,7 +518,7 @@ export default function AutoPostPage() {
   const [wanAvailable, setWanAvailable] = useState<boolean | null>(null);
 
   // Credentials (stored in localStorage, never server-side)
-  const [creds, setCreds] = useState<Creds>({ instagram: { username: "", password: "" }, tiktok_session: false, twitter_session: false, facebook_session: false, pexelsKey: "", hfToken: "" });
+  const [creds, setCreds] = useState<Creds>({ instagram: { username: "", password: "" }, tiktok_session: false, twitter_session: false, facebook_session: false, pexelsKey: "" });
   const [showPwd, setShowPwd] = useState(false);
   const [loginLoading, setLoginLoading] = useState<string | null>(null);
   const [loginMsg, setLoginMsg] = useState("");
@@ -537,12 +534,7 @@ export default function AutoPostPage() {
   const sanitizeToken = (v: string) => v.replace(/[^\x20-\x7E]/g, "").trim();
 
   const saveCreds = (next: Creds) => {
-    // Sanitize les tokens avant de sauvegarder
-    const clean: Creds = {
-      ...next,
-      hfToken: sanitizeToken(next.hfToken),
-      pexelsKey: sanitizeToken(next.pexelsKey),
-    };
+    const clean: Creds = { ...next, pexelsKey: sanitizeToken(next.pexelsKey) };
     setCreds(clean);
     localStorage.setItem("ba_creds", JSON.stringify(clean));
   };
@@ -646,16 +638,11 @@ export default function AutoPostPage() {
   // ── Video ─────────────────────────────────────────────────────────────────────
   const generateScript = async () => {
     if (!book) return;
-    if (!creds.hfToken) {
-      setScriptError("Token HuggingFace manquant — va dans l'onglet Comptes et ajoute ton token hf_... (gratuit sur huggingface.co/settings/tokens)");
-      return;
-    }
     setGenerating(true); setScript(null); setVideoBlobUrl(null); setScriptError(null); setActiveVariant(0);
     try {
-      const cleanToken = sanitizeToken(creds.hfToken);
       const res = await fetch("/api/video-script", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-hf-token": cleanToken },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: videoType,
           bookTitle: book.title,
@@ -728,24 +715,21 @@ export default function AutoPostPage() {
 
   // ── Génération HD via serveur Python (imageio + Pillow → vrai MP4) ─────────
   const renderVideoHD = async (slides: Slide[]) => {
-    setRenderStage("🎵 Génération musique IA…");
-    // Générer la musique d'abord si token HF
+    setRenderStage("🎵 Génération musique IA (MusicGen)…");
     let musicB64: string | null = null;
-    if (creds.hfToken) {
-      try {
-        const totalSec = slides.reduce((s, sl) => s + sl.duration, 0);
-        const mRes = await fetch("/api/generate-music", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-hf-token": creds.hfToken },
-          body: JSON.stringify({ videoType, theme: videoTheme, duration: totalSec }),
-          signal: AbortSignal.timeout(130_000),
-        });
-        if (mRes.ok) {
-          const ab = await mRes.arrayBuffer();
-          musicB64 = "data:audio/flac;base64," + btoa(String.fromCharCode(...new Uint8Array(ab)));
-        }
-      } catch (e) { console.warn("MusicGen:", e); }
-    }
+    try {
+      const totalSec = slides.reduce((s, sl) => s + sl.duration, 0);
+      const mRes = await fetch("/api/generate-music", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoType, theme: videoTheme, duration: totalSec }),
+        signal: AbortSignal.timeout(130_000),
+      });
+      if (mRes.ok) {
+        const ab = await mRes.arrayBuffer();
+        musicB64 = "data:audio/flac;base64," + btoa(String.fromCharCode(...new Uint8Array(ab)));
+      }
+    } catch (e) { console.warn("MusicGen:", e); }
     setRenderProgress(20);
     setRenderStage(useWan ? "🤖 Génération fond Wan2.1 (peut prendre 1-3 min)…" : "🎬 Rendu vidéo HD côté serveur…");
 
@@ -757,9 +741,8 @@ export default function AutoPostPage() {
       book_category: book?.category || "",
       cover_base64: book?.coverDataUrl || null,
       pexels_key: creds.pexelsKey || null,
-      hf_token: creds.hfToken || null,
       music_base64: musicB64,
-      use_wan: useWan && (wanAvailable || !!creds.hfToken),
+      use_wan: useWan && wanAvailable,
     };
 
     const ticker = setInterval(() => setRenderProgress(p => Math.min(90, p + 2)), 800);
@@ -787,7 +770,7 @@ export default function AutoPostPage() {
     const t = setInterval(() => { elapsed += 0.4; setRenderProgress(Math.min(90, Math.round(elapsed / total * 100))); }, 400);
     const blob = await renderVideoToBlob(
       slides, fmt, thm, book?.coverDataUrl, videoType, 30,
-      creds.pexelsKey || undefined, creds.hfToken || undefined,
+      creds.pexelsKey || undefined,
       book?.category, book?.title, (stage) => setRenderStage(stage)
     );
     clearInterval(t);
@@ -1089,11 +1072,11 @@ export default function AutoPostPage() {
                   <div className="grid grid-cols-3 gap-1.5">
                     {[
                       { id: false, label: "Gradient", sub: "Toujours dispo", active: !useWan },
-                      { id: true,  label: "Wan2.1 IA", sub: (wanAvailable || creds.hfToken) ? "IA générative 🤖" : "Non installé", active: useWan },
+                      { id: true,  label: "Wan2.1 IA", sub: wanAvailable ? "IA générative 🤖" : "Serveur local requis", active: useWan },
                     ].map(opt => (
                       <button key={String(opt.id)}
                         onClick={() => { if (!opt.id || wanAvailable) setUseWan(opt.id as boolean); }}
-                        disabled={opt.id === true && !wanAvailable && !creds.hfToken}
+                        disabled={opt.id === true && !wanAvailable}
                         className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg border text-xs transition-all disabled:opacity-30 ${opt.active ? "border-violet-500/50 bg-violet-500/10 text-white" : "border-white/[0.05] text-white/40"}`}>
                         <span className="font-medium">{opt.label}</span>
                         <span className="text-white/30 text-[10px]">{opt.sub}</span>
@@ -1128,34 +1111,9 @@ export default function AutoPostPage() {
               <p className="text-center text-white/30 text-xs">Sélectionne un livre dans le panneau gauche</p>
             )}
             {scriptError && (
-              <div className="bg-red-500/10 border border-red-500/25 rounded-2xl p-4 space-y-2">
-                <p className="text-red-400 text-xs font-semibold">
-                  {scriptError === "TOKEN_CORRUPT" ? "⚠️ Token corrompu" : scriptError.includes("Token HuggingFace") ? "🔑 Token HuggingFace manquant" : "❌ Erreur de génération"}
-                </p>
-                {scriptError === "TOKEN_CORRUPT" ? (
-                  <>
-                    <p className="text-white/60 text-xs">Ton token contient des caractères invalides (emoji ou espace caché). Efface-le et recolle-le proprement.</p>
-                    <button onClick={() => {
-                      const clean: Creds = { ...creds, hfToken: "" };
-                      setCreds(clean);
-                      localStorage.setItem("ba_creds", JSON.stringify(clean));
-                      setScriptError(null);
-                      setTab("accounts");
-                    }} className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/40 text-orange-300 text-xs rounded-xl transition-all">
-                      <KeyRound size={12} /> Réinitialiser le token
-                    </button>
-                  </>
-                ) : scriptError.includes("Token HuggingFace") ? (
-                  <>
-                    <p className="text-white/60 text-xs">Ton token HuggingFace n&apos;est pas encore sauvegardé sur ce navigateur.</p>
-                    <button onClick={() => setTab("accounts")}
-                      className="w-full flex items-center justify-center gap-2 py-2 bg-purple-500/20 border border-purple-500/30 text-purple-300 rounded-xl text-xs font-medium hover:bg-purple-500/30 transition-colors">
-                      <KeyRound size={12} /> Aller dans Comptes → Clés IA
-                    </button>
-                  </>
-                ) : (
-                  <p className="text-red-300/80 text-xs leading-relaxed">{scriptError}</p>
-                )}
+              <div className="bg-red-500/10 border border-red-500/25 rounded-2xl p-4">
+                <p className="text-red-400 text-xs font-semibold mb-1">❌ Erreur de génération</p>
+                <p className="text-red-300/80 text-xs leading-relaxed">{scriptError}</p>
               </div>
             )}
             {script && (
@@ -1300,8 +1258,8 @@ export default function AutoPostPage() {
                     </div>
                     <div className="flex gap-2 flex-wrap">
                       {creds.pexelsKey && <span className="text-xs px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-lg">🎬 Pexels</span>}
-                      {creds.hfToken && <span className="text-xs px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded-lg">🎵 MusicGen IA</span>}
-                      {!creds.pexelsKey && !creds.hfToken && <span className="text-xs text-white/30">Synth ambiant · Ajoute tes clés IA pour plus</span>}
+                      <span className="text-xs px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded-lg">🎵 MusicGen IA</span>
+                      {!creds.pexelsKey && <span className="text-xs text-white/30">Ajoute Pexels pour des fonds vidéo réels</span>}
                     </div>
                   </div>
                 )}
@@ -1395,10 +1353,10 @@ export default function AutoPostPage() {
             </div>
           )}
 
-          {/* ── Clés IA Vidéo (gratuites) ────────────────────────────── */}
+          {/* ── Clés IA Vidéo ────────────────────────────────────────── */}
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 space-y-4">
             <div>
-              <p className="text-white font-semibold text-sm mb-0.5">🎬 Pexels — Fond vidéo IA</p>
+              <p className="text-white font-semibold text-sm mb-0.5">🎬 Pexels — Fond vidéo réel</p>
               <p className="text-white/40 text-xs mb-2">Compte gratuit → <a href="https://www.pexels.com/api/" target="_blank" className="text-blue-400 underline">pexels.com/api</a> · Copie ta clé ici</p>
               <input
                 type="password"
@@ -1407,23 +1365,19 @@ export default function AutoPostPage() {
                 onChange={e => saveCreds({ ...creds, pexelsKey: e.target.value })}
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50"
               />
-              {creds.pexelsKey && <p className="text-emerald-400 text-xs mt-1">✓ Fonds cinématiques Pexels activés</p>}
+              {creds.pexelsKey
+                ? <p className="text-emerald-400 text-xs mt-1">✓ Fonds cinématiques Pexels activés</p>
+                : <p className="text-white/30 text-xs mt-1">Sans Pexels : gradient animé (déjà beau). Avec : vraies vidéos cinématiques 🎬</p>
+              }
             </div>
-            <div>
-              <p className="text-white font-semibold text-sm mb-0.5">🎵 HuggingFace — Musique IA (MusicGen)</p>
-              <p className="text-white/40 text-xs mb-2">Compte gratuit → <a href="https://huggingface.co/settings/tokens" target="_blank" className="text-purple-400 underline">huggingface.co/settings/tokens</a> · Token READ gratuit</p>
-              <input
-                type="password"
-                placeholder="Token HuggingFace hf_... (gratuit)"
-                value={creds.hfToken}
-                onChange={e => saveCreds({ ...creds, hfToken: e.target.value })}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500/50"
-              />
-              {creds.hfToken && <p className="text-emerald-400 text-xs mt-1">✓ Musique IA MusicGen (Meta/Facebook) activée</p>}
+            <div className="flex items-center gap-2 p-3 bg-purple-500/5 border border-purple-500/15 rounded-xl">
+              <span className="text-lg">🎵</span>
+              <div>
+                <p className="text-white text-xs font-semibold">MusicGen IA — Toujours actif</p>
+                <p className="text-white/40 text-xs">Musique cinématique générée automatiquement à chaque vidéo</p>
+              </div>
+              <span className="ml-auto text-emerald-400 text-xs font-bold">✓ ON</span>
             </div>
-            {!creds.pexelsKey && !creds.hfToken && (
-              <p className="text-white/30 text-xs">Sans ces clés : synth ambiant + gradient (déjà bien). Avec : vraie vidéo + vraie musique IA 🎬</p>
-            )}
           </div>
 
           {!connected && (

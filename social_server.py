@@ -46,6 +46,9 @@ except ImportError:
     HAS_GRADIO = False
     print("⚠  gradio_client non installé. Lance: pip install gradio_client")
 
+# ── Token HuggingFace (depuis env — défini dans .env ou variable système) ────
+HF_TOKEN: str = os.environ.get("HF_TOKEN", "")
+
 _wan_pipe = None  # pipeline local chargé à la demande
 
 # ── Install check ─────────────────────────────────────────────────────────────
@@ -157,6 +160,7 @@ def build_wan_prompt(category: str, video_type: str, theme: str) -> tuple[str, s
 async def generate_wan_video_bytes(category: str, video_type: str, theme: str,
                                    fmt: str = "portrait",
                                    hf_token: Optional[str] = None) -> Optional[bytes]:
+    hf_token = hf_token or HF_TOKEN or None  # env var toujours disponible
     """Génère une vidéo background Wan2.1 (local GPU → HF Spaces → HF Inference API)."""
     global _wan_pipe
     prompt, negative = build_wan_prompt(category, video_type, theme)
@@ -462,8 +466,7 @@ class VideoGenRequest(BaseModel):
     book_category: str = ""
     cover_base64: Optional[str] = None
     pexels_key: Optional[str] = None
-    hf_token: Optional[str] = None      # token HuggingFace (MusicGen, Wan2.1)
-    music_base64: Optional[str] = None  # audio FLAC en base64
+    music_base64: Optional[str] = None  # audio FLAC en base64 (généré côté Next.js)
     use_wan: bool = False               # utiliser Wan2.1 pour le fond
 
 class WanStatusResponse(BaseModel):
@@ -1116,11 +1119,10 @@ async def generate_video_hd(req: VideoGenRequest):
         return frames
 
     # 1. Wan2.1 (IA générative — fond unique)
-    if req.use_wan and (HAS_WAN_LOCAL or HAS_GRADIO or req.hf_token):
+    if req.use_wan and (HAS_WAN_LOCAL or HAS_GRADIO or HF_TOKEN):
         print("🎬 Génération fond Wan2.1…")
         wan_bytes = await generate_wan_video_bytes(
-            req.book_category, "teaser", req.theme, req.format,
-            hf_token=req.hf_token
+            req.book_category, "teaser", req.theme, req.format
         )
         if wan_bytes:
             bg_frames = _extract_bg_frames(wan_bytes, 300)

@@ -52,10 +52,10 @@ function getPrompt(videoType: string, theme: string): string {
 
 export async function POST(req: NextRequest) {
   const body = await req.json() as { videoType: string; theme: string; duration: number };
-  const hfToken = req.headers.get("x-hf-token") || "";
+  const hfToken = process.env.HF_TOKEN || "";
 
   if (!hfToken) {
-    return NextResponse.json({ error: "Token HuggingFace manquant" }, { status: 400 });
+    return NextResponse.json({ error: "HF_TOKEN non configuré sur ce serveur" }, { status: 500 });
   }
 
   const prompt = getPrompt(body.videoType, body.theme);

@@ -201,11 +201,11 @@ RÉPONDS UNIQUEMENT EN JSON VALIDE.`
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
-  const hfToken = req.headers.get("x-hf-token") || "";
+  const hfToken = process.env.HF_TOKEN || "";
   if (!hfToken) {
     return NextResponse.json({
-      error: "Token HuggingFace manquant",
-      detail: "Ajoute ton token HuggingFace (hf_...) dans l'onglet Comptes → section Clés IA. C'est gratuit sur huggingface.co/settings/tokens"
+      error: "Token HuggingFace non configuré",
+      detail: "La variable d'environnement HF_TOKEN n'est pas définie sur ce serveur."
     }, { status: 400 });
   }
 
