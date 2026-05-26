@@ -575,42 +575,127 @@ export default function AutoPostPage() {
     setGenerating(false);
   };
 
+  // ── Construire les slides depuis le script IA ─────────────────────────────
+  const buildSlides = (): Slide[] => {
+    if (!script) return [];
+    let slides: Slide[] = [];
+    if (videoType === "teaser" || videoType === "promo") {
+      const raw = (script.slides as Slide[]) || [];
+      slides = videoType === "teaser" && script.hook
+        ? [{ text: script.hook as string, duration: 2.5, style: "big" }, ...raw]
+        : raw;
+    } else if (videoType === "booktrailer") {
+      slides = ((script.scenes as {text:string;narration?:string;duration:number;style:string}[]) || [])
+        .map(s => ({ text: s.text, subtext: s.narration, duration: s.duration, style: s.style }));
+    } else if (videoType === "citation") {
+      const v = (script.variants as {quote:string;author:string;context:string}[])?.[activeVariant];
+      if (v) slides = [
+        { text: v.context, duration: 3, style: "normal" },
+        { text: `"${v.quote}"`, duration: 6, style: "big" },
+        { text: `— ${v.author}`, duration: 3, style: "normal" },
+      ];
+    } else if (videoType === "shorts") {
+      slides = ((script.onscreenText as string[]) || []).map((t, i) => ({ text: t, duration: 7, style: i === 0 ? "big" : "normal" }));
+      if (script.hook) slides = [{ text: script.hook as string, duration: 3, style: "intro" }, ...slides];
+    }
+    if (!slides.length) slides = [{ text: book?.title || "", duration: 3, style: "title" }];
+    slides.push({ text: book?.title || "", duration: 4, style: "title" });
+    return slides;
+  };
+
+  // ── Génération HD via serveur Python (imageio + Pillow → vrai MP4) ─────────
+  const renderVideoHD = async (slides: Slide[]) => {
+    setRenderStage("🎵 Génération musique IA…");
+    // Générer la musique d'abord si token HF
+    let musicB64: string | null = null;
+    if (creds.hfToken) {
+      try {
+        const totalSec = slides.reduce((s, sl) => s + sl.duration, 0);
+        const mRes = await fetch("/api/generate-music", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-hf-token": creds.hfToken },
+          body: JSON.stringify({ videoType, theme: videoTheme, duration: totalSec }),
+          signal: AbortSignal.timeout(130_000),
+        });
+        if (mRes.ok) {
+          const ab = await mRes.arrayBuffer();
+          musicB64 = "data:audio/flac;base64," + btoa(String.fromCharCode(...new Uint8Array(ab)));
+        }
+      } catch (e) { console.warn("MusicGen:", e); }
+    }
+    setRenderProgress(20);
+    setRenderStage("🎬 Rendu vidéo HD côté serveur…");
+
+    const body = {
+      slides,
+      theme: videoTheme,
+      format: videoFormat,
+      book_title: book?.title || "",
+      book_category: book?.category || "",
+      cover_base64: book?.coverDataUrl || null,
+      pexels_key: creds.pexelsKey || null,
+      music_base64: musicB64,
+    };
+
+    const ticker = setInterval(() => setRenderProgress(p => Math.min(90, p + 2)), 800);
+    const res = await fetch(`${SERVER}/api/book/generate-video`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(300_000),
+    });
+    clearInterval(ticker);
+
+    if (!res.ok) {
+      const err = await res.json() as { error?: string };
+      throw new Error(err.error || `Erreur serveur ${res.status}`);
+    }
+    setRenderProgress(95);
+    const videoBlob = await res.blob();
+    return URL.createObjectURL(videoBlob);
+  };
+
+  // ── Génération Canvas (fallback navigateur) ───────────────────────────────
+  const renderVideoCanvas = async (slides: Slide[]) => {
+    const total = slides.reduce((s, sl) => s + sl.duration, 0);
+    let elapsed = 0;
+    const t = setInterval(() => { elapsed += 0.4; setRenderProgress(Math.min(90, Math.round(elapsed / total * 100))); }, 400);
+    const blob = await renderVideoToBlob(
+      slides, fmt, thm, book?.coverDataUrl, videoType, 30,
+      creds.pexelsKey || undefined, creds.hfToken || undefined,
+      book?.category, book?.title, (stage) => setRenderStage(stage)
+    );
+    clearInterval(t);
+    return URL.createObjectURL(blob);
+  };
+
   const renderVideo = async () => {
     if (!script) return;
     setRendering(true); setRenderProgress(0); setVideoBlobUrl(null); setRenderStage("🎬 Préparation…");
     try {
-      let slides: Slide[] = [];
-      if (videoType === "teaser" || videoType === "promo") {
-        const raw = (script.slides as Slide[]) || [];
-        slides = videoType === "teaser" && script.hook ? [{ text: script.hook as string, duration: 2.5, style: "big" }, ...raw] : raw;
-      } else if (videoType === "booktrailer") {
-        slides = ((script.scenes as {text:string;narration?:string;duration:number;style:string}[]) || []).map(s => ({ text: s.text, subtext: s.narration, duration: s.duration, style: s.style }));
-      } else if (videoType === "citation") {
-        const v = (script.variants as {quote:string;author:string;context:string}[])?.[activeVariant];
-        if (v) slides = [{ text: v.context, duration: 3, style: "normal" }, { text: `"${v.quote}"`, duration: 6, style: "big" }, { text: `— ${v.author}`, duration: 3, style: "normal" }];
-      } else if (videoType === "shorts") {
-        slides = ((script.onscreenText as string[]) || []).map((t, i) => ({ text: t, duration: 8, style: i === 0 ? "big" : "normal" }));
-        if (script.hook) slides = [{ text: script.hook as string, duration: 3, style: "intro" }, ...slides];
+      const slides = buildSlides();
+      let url: string;
+      if (connected) {
+        // Mode HD : serveur Python (imageio + Pillow → vrai MP4)
+        url = await renderVideoHD(slides);
+      } else {
+        // Fallback : Canvas navigateur
+        url = await renderVideoCanvas(slides);
       }
-      if (!slides.length) slides = [{ text: book?.title || "", duration: 3, style: "title" }];
-      slides.push({ text: book?.title || "", duration: 4, style: "title" });
-      const total = slides.reduce((s, sl) => s + sl.duration, 0);
-      let elapsed = 0; const t = setInterval(() => { elapsed += 0.5; setRenderProgress(Math.min(95, Math.round(elapsed / total * 100))); }, 500);
-      const blob = await renderVideoToBlob(
-        slides, fmt, thm, book?.coverDataUrl, videoType, 30,
-        creds.pexelsKey || undefined,
-        creds.hfToken || undefined,
-        book?.category, book?.title,
-        (stage) => setRenderStage(stage)
-      );
-      clearInterval(t); setRenderProgress(100); setVideoBlobUrl(URL.createObjectURL(blob));
-    } catch (e) { console.error(e); }
+      setRenderProgress(100);
+      setVideoBlobUrl(url);
+    } catch (e) {
+      console.error(e);
+      setRenderStage(`❌ Erreur : ${String(e)}`);
+    }
     setRendering(false);
   };
 
   const downloadVideo = () => {
     if (!videoBlobUrl) return;
-    const a = document.createElement("a"); a.href = videoBlobUrl; a.download = `${book?.title || "video"}_${videoType}.webm`; a.click();
+    const ext = connected ? "mp4" : "webm";
+    const a = document.createElement("a"); a.href = videoBlobUrl;
+    a.download = `${book?.title || "video"}_${videoType}.${ext}`; a.click();
   };
 
   const generateCaption = () => {

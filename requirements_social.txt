@@ -3,3 +3,7 @@ uvicorn
 instagrapi
 playwright
 requests
+imageio
+imageio-ffmpeg
+Pillow
+numpy

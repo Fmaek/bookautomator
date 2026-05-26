@@ -3,15 +3,27 @@ BookAutomator — Serveur de publication automatique
 Lance: python social_server.py
 Puis ouvre l'app et configure les identifiants dans Studio Social > Comptes
 """
-import asyncio, base64, json, os, time, uuid, threading
+import asyncio, base64, io, json, os, subprocess, time, uuid, threading
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel
 import uvicorn
+
+# ── Dépendances vidéo optionnelles ────────────────────────────────────────────
+try:
+    import imageio, imageio_ffmpeg
+    import numpy as np
+    from PIL import Image, ImageDraw, ImageFont, ImageFilter
+    HAS_VIDGEN = True
+except ImportError:
+    HAS_VIDGEN = False
+    print("⚠  imageio/Pillow non installés — génération vidéo HD désactivée.")
+    print("   Lance: pip install imageio imageio-ffmpeg Pillow numpy")
 
 # ── Install check ─────────────────────────────────────────────────────────────
 try:
@@ -44,6 +56,216 @@ def load_queue():
 def save_queue(q):
     QUEUE_FILE.write_text(json.dumps(q, ensure_ascii=False, indent=2), encoding="utf-8")
 
+# ── Constantes vidéo ──────────────────────────────────────────────────────────
+THEME_COLORS = {
+    "dark":   {"bg1":(13,13,26),   "bg2":(26,10,46),  "acc":(168,85,247)},
+    "gold":   {"bg1":(26,18,0),    "bg2":(45,30,0),   "acc":(245,158,11)},
+    "ocean":  {"bg1":(0,17,26),    "bg2":(0,26,46),   "acc":(6,182,212)},
+    "fire":   {"bg1":(26,5,0),     "bg2":(45,10,0),   "acc":(239,68,68)},
+    "forest": {"bg1":(0,26,10),    "bg2":(0,45,18),   "acc":(16,185,129)},
+    "rose":   {"bg1":(26,0,16),    "bg2":(45,0,32),   "acc":(236,72,153)},
+}
+FORMAT_SIZES = {"portrait":(540,960), "square":(540,540), "landscape":(960,540)}
+PEXELS_QUERIES = {
+    "développement":"motivation success achievement",
+    "self-help":"motivation success achievement",
+    "romance":"romantic couple sunset love",
+    "thriller":"dark city mystery suspense night",
+    "horreur":"dark scary mysterious",
+    "fiction":"cinematic dramatic sky",
+    "fantasy":"fantasy magical forest mystical",
+    "sci-fi":"futuristic technology space",
+    "science-fiction":"futuristic technology space",
+    "business":"professional business office success",
+    "finance":"money wealth success finance",
+    "spiritualité":"meditation peaceful nature zen",
+    "histoire":"ancient architecture vintage history",
+    "cuisine":"food cooking kitchen",
+    "santé":"health wellness nature",
+    "policier":"detective mystery dark street night",
+}
+
+# ── Helpers de rendu vidéo ────────────────────────────────────────────────────
+if HAS_VIDGEN:
+    def _get_font(size: int, bold: bool = False):
+        candidates = [
+            "C:/Windows/Fonts/arialbd.ttf" if bold else "C:/Windows/Fonts/arial.ttf",
+            "C:/Windows/Fonts/Arial Bold.ttf" if bold else "C:/Windows/Fonts/Arial.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        ]
+        for p in candidates:
+            try: return ImageFont.truetype(p, size)
+            except: pass
+        return ImageFont.load_default()
+
+    def _wrap(draw, text: str, font, max_w: int) -> list:
+        words = text.split()
+        lines, cur = [], ""
+        for w in words:
+            test = (cur + " " + w).strip()
+            if draw.textlength(test, font=font) > max_w and cur:
+                lines.append(cur); cur = w
+            else:
+                cur = test
+        if cur: lines.append(cur)
+        return lines or [" "]
+
+    def _gradient_bg(W: int, H: int, c1: tuple, c2: tuple) -> np.ndarray:
+        arr = np.zeros((H, W, 3), dtype=np.uint8)
+        for y in range(H):
+            t = y / H
+            arr[y, :] = [int(c1[i]*(1-t)+c2[i]*t) for i in range(3)]
+        return arr
+
+    def _vignette(frame: np.ndarray) -> np.ndarray:
+        H, W = frame.shape[:2]
+        Y, X = np.ogrid[:H, :W]
+        dist = np.sqrt(((X-W/2)/(W*0.5))**2 + ((Y-H*0.45)/(H*0.45))**2)
+        mask = np.clip(1 - dist*0.72, 0, 1)[..., np.newaxis]
+        return np.clip(frame * mask, 0, 255).astype(np.uint8)
+
+    def _grain(frame: np.ndarray, strength: int = 7) -> np.ndarray:
+        noise = np.random.randint(-strength, strength+1, frame.shape, dtype=np.int16)
+        return np.clip(frame.astype(np.int16)+noise, 0, 255).astype(np.uint8)
+
+    def _load_cover(b64: str, max_w: int, max_h: int) -> Optional[Image.Image]:
+        try:
+            data = base64.b64decode(b64.split(",")[-1])
+            img = Image.open(io.BytesIO(data)).convert("RGBA")
+            img.thumbnail((max_w, max_h), Image.LANCZOS)
+            return img
+        except: return None
+
+    def _render_frame(slide: dict, W: int, H: int, thm: dict,
+                      bg_frames: list, gf: int, cover: Optional[Image.Image],
+                      p: float, fade: float) -> np.ndarray:
+        acc = thm["acc"]
+        style = slide.get("style","normal")
+        big = style in ["big","title","intro","climax"]
+
+        # Fond
+        if bg_frames:
+            bg = bg_frames[gf % len(bg_frames)]
+            base_arr = np.array(bg.convert("RGB").resize((W,H), Image.LANCZOS))
+            overlay = _gradient_bg(W, H, thm["bg1"], thm["bg2"])
+            frame_arr = np.clip(base_arr*0.42 + overlay*0.58, 0, 255).astype(np.uint8)
+        else:
+            frame_arr = _gradient_bg(W, H, thm["bg1"], thm["bg2"])
+
+        img = Image.fromarray(frame_arr).convert("RGBA")
+
+        # Lueur centrale
+        glow = Image.new("RGBA",(W,H),(0,0,0,0))
+        gd = ImageDraw.Draw(glow)
+        for rm, al in [(0.65,12),(0.4,22),(0.2,35)]:
+            r = int(W*rm); cx,cy = W//2,int(H*0.4)
+            gd.ellipse([cx-r,cy-r,cx+r,cy+r], fill=(*acc,int(al*fade)))
+        glow = glow.filter(ImageFilter.GaussianBlur(40))
+        img = Image.alpha_composite(img, glow)
+        draw = ImageDraw.Draw(img)
+
+        text_cy = H*0.5
+
+        # Couverture + Ken Burns
+        if cover:
+            zoom = 1 + 0.065*p
+            cov_w = int(W*(0.52 if big else 0.27))
+            cov_h = int(cov_w * cover.height/max(1,cover.width))
+            zw,zh = int(cov_w*zoom), int(cov_h*zoom)
+            scaled = cover.resize((zw,zh), Image.LANCZOS)
+            cx_off,cy_off = (zw-cov_w)//2,(zh-cov_h)//2
+            scaled = scaled.crop((cx_off,cy_off,cx_off+cov_w,cy_off+cov_h))
+            cx = (W-cov_w)//2 if big else int(W*0.70)
+            cy = int(H*0.09) if big else int(H*0.15)
+
+            # Ombre portée derrière la couv
+            shadow = Image.new("RGBA",(W,H),(0,0,0,0))
+            sd = ImageDraw.Draw(shadow)
+            pad=18
+            sd.rounded_rectangle([cx-pad,cy-pad,cx+cov_w+pad,cy+cov_h+pad],
+                                  radius=12, fill=(*acc,int(55*fade)))
+            shadow = shadow.filter(ImageFilter.GaussianBlur(22))
+            img = Image.alpha_composite(img, shadow)
+
+            cov_rgba = scaled.convert("RGBA")
+            alpha_ch = cov_rgba.getchannel("A")
+            alpha_ch = alpha_ch.point(lambda x: int(x*fade))
+            cov_rgba.putalpha(alpha_ch)
+            img.paste(cov_rgba,(cx,cy),cov_rgba)
+            draw = ImageDraw.Draw(img)
+            if big: text_cy = H*0.77
+
+        # Ligne accent
+        line_y = int(H*0.70 if (cover and big) else H*0.085)
+        lw = int(W*0.65*min(1, p*2.5))
+        lx = (W-lw)//2
+        draw.rectangle([lx,line_y,lx+lw,line_y+2], fill=(*acc,int(205*fade)))
+
+        fade_a = int(255*fade)
+
+        if style == "cta":
+            bh = int(H*0.068); bw = int(W*0.76)
+            bx = (W-bw)//2; by = int(text_cy - bh//2)
+            btn_ov = Image.new("RGBA",(W,H),(0,0,0,0))
+            bd = ImageDraw.Draw(btn_ov)
+            bd.rounded_rectangle([bx,by,bx+bw,by+bh], radius=bh//2, fill=(*acc,fade_a))
+            img = Image.alpha_composite(img, btn_ov)
+            draw = ImageDraw.Draw(img)
+            fnt = _get_font(int(W*0.038), bold=True)
+            txt = slide["text"][:55]
+            tw = draw.textlength(txt, font=fnt)
+            draw.text(((W-tw)//2, by+(bh-int(W*0.038))//2), txt,
+                      fill=(255,255,255,fade_a), font=fnt)
+        else:
+            fs = int(W*(0.074 if big else 0.052))
+            fnt_m = _get_font(fs, bold=True)
+            fnt_s = _get_font(int(W*0.030))
+
+            # Reveal mots progressif
+            words = slide["text"].split()
+            shown = max(1, int(len(words)*min(1, p*2.8)))
+            vis = " ".join(words[:shown])
+
+            lines = _wrap(draw, vis or " ", fnt_m, int(W*0.84))
+            lh = int(fs*1.38)
+            tot_h = len(lines)*lh
+            sy = int(text_cy - tot_h/2)
+            slide_up = int((1-min(1,p*4))*H*0.022)
+
+            for li, line in enumerate(lines):
+                ty = sy + li*lh - slide_up
+                if big:
+                    # Glow multi-pass
+                    for ox,oy in [(-2,-2),(2,-2),(-2,2),(2,2),(0,-3),(3,0),(-3,0),(0,3)]:
+                        draw.text((W//2+ox, ty+oy), line, fill=(*acc,int(55*fade)),
+                                  font=fnt_m, anchor="mt")
+                    draw.text((W//2, ty), line, fill=(*acc,fade_a), font=fnt_m, anchor="mt")
+                else:
+                    # Ombre portée
+                    draw.text((W//2+2, ty+2), line, fill=(0,0,0,int(160*fade)),
+                              font=fnt_m, anchor="mt")
+                    draw.text((W//2, ty), line, fill=(255,255,255,fade_a),
+                              font=fnt_m, anchor="mt")
+
+            if slide.get("subtext") and p > 0.35:
+                sub_fade = min(1,(p-0.35)/0.3)
+                sub_y = sy+tot_h+int(W*0.04)
+                for si, sl2 in enumerate(_wrap(draw, slide["subtext"], fnt_s, int(W*0.78))):
+                    draw.text((W//2, sub_y+si*int(W*0.037)), sl2,
+                              fill=(200,200,200,int(fade_a*sub_fade)), font=fnt_s, anchor="mt")
+
+        result = np.array(img.convert("RGB"))
+        result = _vignette(result)
+        result = _grain(result, 6)
+        # Letterbox
+        bh = int(H*0.075)
+        result[:bh] = 0; result[-bh:] = 0
+        # Fondu
+        if fade < 0.98:
+            result = np.clip(result*fade, 0, 255).astype(np.uint8)
+        return result
+
 # ── FastAPI ───────────────────────────────────────────────────────────────────
 app = FastAPI(title="BookAutomator Social Server")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -61,6 +283,16 @@ class QueueItem(BaseModel):
     image_base64: Optional[str] = None
     credentials: dict = {}
     scheduled_at: Optional[str] = None
+
+class VideoGenRequest(BaseModel):
+    slides: List[dict]
+    theme: str = "dark"
+    format: str = "portrait"
+    book_title: str = ""
+    book_category: str = ""
+    cover_base64: Optional[str] = None
+    pexels_key: Optional[str] = None
+    music_base64: Optional[str] = None  # audio FLAC en base64
 
 # ── Instagram (instagrapi — username + password, sans API) ────────────────────
 _insta_client: Optional["InstaClient"] = None  # type: ignore
@@ -655,6 +887,116 @@ async def login_platform(platform: str):
         await browser.close()
         print(f"✓ Session {platform} sauvegardée dans {session_file}")
     return {"ok": True, "message": f"Session {platform} sauvegardée"}
+
+# ── Générateur vidéo HD (imageio + Pillow) ────────────────────────────────────
+@app.post("/api/book/generate-video")
+async def generate_video_hd(req: VideoGenRequest):
+    if not HAS_VIDGEN:
+        return JSONResponse(
+            {"error": "Installe: pip install imageio imageio-ffmpeg Pillow numpy"},
+            status_code=503
+        )
+
+    thm = THEME_COLORS.get(req.theme, THEME_COLORS["dark"])
+    W, H = FORMAT_SIZES.get(req.format, (540, 960))
+    FPS = 30
+    TRANS = int(FPS * 0.4)
+
+    # Charger couverture
+    cover = None
+    if req.cover_base64:
+        cover = _load_cover(req.cover_base64, int(W * 0.55), int(W * 0.88))
+
+    # Télécharger vidéo Pexels pour les frames de fond
+    bg_frames: list = []
+    if req.pexels_key:
+        try:
+            import requests as rq
+            cat = (req.book_category or "").lower()
+            query = next((v for k, v in PEXELS_QUERIES.items() if k in cat),
+                         "cinematic dramatic landscape")
+            orient = "portrait" if req.format == "portrait" else "landscape"
+            pex = rq.get(
+                f"https://api.pexels.com/videos/search?query={query}&per_page=5&orientation={orient}",
+                headers={"Authorization": req.pexels_key}, timeout=10
+            ).json()
+            if pex.get("videos"):
+                files = pex["videos"][0]["video_files"]
+                f = sorted([x for x in files if x["width"] <= 1280], key=lambda x: -x["width"])
+                if f:
+                    vid_bytes = rq.get(f[0]["link"], timeout=40).content
+                    tmp = COVERS_DIR / f"bg_{uuid.uuid4().hex}.mp4"
+                    tmp.write_bytes(vid_bytes)
+                    reader = imageio.get_reader(str(tmp))
+                    meta = reader.get_meta_data()
+                    vfps = meta.get("fps", 25)
+                    for i, fr in enumerate(reader):
+                        if i % max(1, int(vfps // 6)) == 0:
+                            bg_frames.append(Image.fromarray(fr))
+                        if len(bg_frames) >= 250: break
+                    reader.close()
+                    tmp.unlink(missing_ok=True)
+        except Exception as e:
+            print(f"Pexels: {e}")
+
+    # Générer les frames
+    frames_out = []
+    gf = 0
+    for slide in req.slides:
+        dur = float(slide.get("duration", 3))
+        tf = int(dur * FPS)
+        for f in range(tf):
+            p = f / max(1, tf)
+            fi = min(1.0, f / TRANS) if f < TRANS else 1.0
+            fo = min(1.0, (tf - f) / TRANS) if f > tf - TRANS else 1.0
+            fade = min(fi, fo)
+            frame = _render_frame(slide, W, H, thm, bg_frames, gf, cover, p, fade)
+            frames_out.append(frame)
+            gf += 1
+
+    # Écrire MP4 sans audio
+    vid_path = COVERS_DIR / f"vid_{uuid.uuid4().hex}.mp4"
+    try:
+        w = imageio.get_writer(
+            str(vid_path), fps=FPS, codec="libx264",
+            quality=9, macro_block_size=None,
+            ffmpeg_params=["-pix_fmt", "yuv420p", "-preset", "fast"]
+        )
+        for fr in frames_out:
+            w.append_data(fr)
+        w.close()
+
+        # Ajouter musique si fournie
+        if req.music_base64:
+            try:
+                mus_data = base64.b64decode(req.music_base64.split(",")[-1])
+                mus_path = COVERS_DIR / f"mus_{uuid.uuid4().hex}.flac"
+                mus_path.write_bytes(mus_data)
+                out_path = COVERS_DIR / f"final_{uuid.uuid4().hex}.mp4"
+                total_dur = sum(float(s.get("duration", 3)) for s in req.slides)
+                ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+                subprocess.run([
+                    ffmpeg, "-y",
+                    "-i", str(vid_path),
+                    "-i", str(mus_path),
+                    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+                    "-t", str(total_dur), "-shortest",
+                    str(out_path)
+                ], capture_output=True, timeout=180)
+                vid_path.unlink(missing_ok=True)
+                mus_path.unlink(missing_ok=True)
+                vid_path = out_path
+            except Exception as e:
+                print(f"Mix audio: {e}")
+
+        data = vid_path.read_bytes()
+        vid_path.unlink(missing_ok=True)
+        return Response(content=data, media_type="video/mp4",
+                        headers={"Content-Disposition": "inline; filename=video.mp4"})
+    except Exception as e:
+        try: vid_path.unlink(missing_ok=True)
+        except: pass
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 # ── Start ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
