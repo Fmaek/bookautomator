@@ -143,6 +143,11 @@ function StudioContent() {
   const [showDescription, setShowDescription] = useState(false);
   const [podcastIdx, setPodcastIdx] = useState<number | null>(null);
   const [podcastContent, setPodcastContent] = useState("");
+  const [podcastScript, setPodcastScript] = useState("");
+  const [podcastEpisodeTitle, setPodcastEpisodeTitle] = useState("");
+  const [podcastTab, setPodcastTab] = useState<"plan" | "script">("plan");
+  const [podcastPlaying, setPodcastPlaying] = useState(false);
+  const podcastUtterRef = useRef<SpeechSynthesisUtterance | null>(null);
   const [generatingPodcast, setGeneratingPodcast] = useState(false);
   // New features
   const [language, setLanguage] = useState("Français");
@@ -286,18 +291,63 @@ function StudioContent() {
     setGeneratingPodcast(true);
     setPodcastIdx(idx);
     setPodcastContent("");
+    setPodcastScript("");
+    setPodcastEpisodeTitle("");
+    setPodcastTab("plan");
+    if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+    setPodcastPlaying(false);
     try {
       const res = await fetch("/api/write", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "podcast", bookTitle: title, chapterTitle: chapters[idx].title, chapterIndex: idx + 1, content: chapters[idx].content }),
+        body: JSON.stringify({
+          action: "podcast",
+          bookTitle: title,
+          chapterTitle: chapters[idx].title,
+          chapterIndex: idx + 1,
+          content: chapters[idx].content,
+          mode: "chapter",
+        }),
       });
-      const data = await res.json();
+      const data = await res.json() as { podcast?: string; script?: string; episodeTitle?: string };
       setPodcastContent(data.podcast || "");
+      setPodcastScript(data.script || "");
+      setPodcastEpisodeTitle(data.episodeTitle || chapters[idx].title);
     } catch {
       setPodcastContent("Erreur lors de la génération. Réessaie.");
     }
     setGeneratingPodcast(false);
+  };
+
+  const podcastSpeak = () => {
+    if (!podcastScript) return;
+    window.speechSynthesis.cancel();
+    const text = podcastScript.replace(/\[PAUSE\]/g, "...").replace(/\[EMPHASE\]/g, "");
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "fr-FR";
+    utter.rate = 0.92;
+    utter.pitch = 1.0;
+    utter.onend = () => setPodcastPlaying(false);
+    utter.onerror = () => setPodcastPlaying(false);
+    podcastUtterRef.current = utter;
+    window.speechSynthesis.speak(utter);
+    setPodcastPlaying(true);
+  };
+
+  const podcastStop = () => {
+    window.speechSynthesis.cancel();
+    setPodcastPlaying(false);
+  };
+
+  const downloadPodcastScript = () => {
+    if (!podcastScript) return;
+    const blob = new Blob([podcastScript], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `podcast-script-${(podcastEpisodeTitle || "episode").replace(/[^a-z0-9]/gi, "-").toLowerCase()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const continueChapter = async (idx: number) => {
@@ -665,38 +715,115 @@ function StudioContent() {
 
       {/* Podcast modal */}
       {podcastIdx !== null && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between p-5 border-b border-white/10">
-              <div className="flex items-center gap-2">
-                <Mic size={16} className="text-pink-400" />
-                <h3 className="text-white font-semibold">Plan d&apos;épisode podcast</h3>
-                {chapters[podcastIdx] && <span className="text-white/40 text-sm">— {chapters[podcastIdx].title}</span>}
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#13111e] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center flex-shrink-0">
+                  <Mic size={14} className="text-white" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-white font-semibold text-sm leading-tight">Studio Podcast</h3>
+                  <p className="text-white/40 text-xs truncate">{podcastEpisodeTitle || (podcastIdx !== null && chapters[podcastIdx] ? chapters[podcastIdx].title : "")}</p>
+                </div>
               </div>
-              <button onClick={() => { setPodcastIdx(null); setPodcastContent(""); }} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
+              <button onClick={() => { podcastStop(); setPodcastIdx(null); setPodcastContent(""); setPodcastScript(""); }}
+                className="p-1.5 hover:bg-white/10 rounded-lg transition-colors flex-shrink-0">
                 <X size={15} className="text-white/40" />
               </button>
             </div>
+
+            {/* Tabs */}
+            {!generatingPodcast && (podcastContent || podcastScript) && (
+              <div className="flex gap-1 px-5 pt-4 pb-0">
+                <button onClick={() => setPodcastTab("plan")}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${podcastTab === "plan" ? "bg-pink-500/20 text-pink-300" : "text-white/40 hover:text-white/60"}`}>
+                  📋 Plan épisode
+                </button>
+                <button onClick={() => setPodcastTab("script")}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${podcastTab === "script" ? "bg-pink-500/20 text-pink-300" : "text-white/40 hover:text-white/60"}`}>
+                  🎙️ Script complet
+                </button>
+              </div>
+            )}
+
+            {/* Content area */}
             <div className="flex-1 overflow-y-auto p-5">
               {generatingPodcast ? (
-                <div className="flex flex-col items-center justify-center py-12 gap-3">
-                  <Loader2 size={24} className="text-pink-400 animate-spin" />
-                  <p className="text-white/50 text-sm">Génération du plan en cours...</p>
+                <div className="flex flex-col items-center justify-center py-14 gap-4">
+                  <div className="relative">
+                    <div className="w-14 h-14 rounded-full bg-pink-500/10 flex items-center justify-center">
+                      <Mic size={22} className="text-pink-400" />
+                    </div>
+                    <div className="absolute inset-0 rounded-full border-2 border-pink-500/30 animate-ping" />
+                  </div>
+                  <p className="text-white/70 text-sm font-medium">Génération plan + script en cours…</p>
+                  <p className="text-white/30 text-xs">Plan détaillé + script word-for-word</p>
                 </div>
-              ) : (
+              ) : podcastTab === "plan" ? (
                 <pre className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap font-sans">{podcastContent}</pre>
+              ) : (
+                <div>
+                  {podcastScript ? (
+                    <div>
+                      <div className="flex items-center gap-2 mb-4 p-3 bg-pink-500/10 border border-pink-500/20 rounded-xl">
+                        <div className={`w-2 h-2 rounded-full ${podcastPlaying ? "bg-pink-400 animate-pulse" : "bg-white/20"}`} />
+                        <span className="text-pink-300 text-xs font-medium">{podcastPlaying ? "Lecture en cours…" : "Script prêt à lire"}</span>
+                      </div>
+                      <pre className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap font-sans">{podcastScript}</pre>
+                    </div>
+                  ) : (
+                    <p className="text-white/30 text-sm text-center py-8">Script non disponible</p>
+                  )}
+                </div>
               )}
             </div>
-            {!generatingPodcast && podcastContent && (
-              <div className="p-4 border-t border-white/10 flex gap-2">
-                <button onClick={() => navigator.clipboard.writeText(podcastContent)}
-                  className="flex items-center gap-2 px-4 py-2 bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 rounded-xl text-sm transition-colors">
-                  <Copy size={13} /> Copier
-                </button>
-                <button onClick={() => { setPodcastIdx(null); setPodcastContent(""); }}
-                  className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white/50 rounded-xl text-sm transition-colors ml-auto">
-                  Fermer
-                </button>
+
+            {/* Audio player + actions */}
+            {!generatingPodcast && (podcastContent || podcastScript) && (
+              <div className="p-4 border-t border-white/10 space-y-3">
+
+                {/* Audio controls */}
+                {podcastScript && (
+                  <div className="flex items-center gap-3 p-3 bg-white/[0.03] border border-white/[0.06] rounded-xl">
+                    <div className="flex items-center gap-2">
+                      {!podcastPlaying ? (
+                        <button onClick={podcastSpeak}
+                          className="flex items-center gap-2 px-4 py-2 bg-pink-500 hover:bg-pink-600 text-white rounded-lg text-xs font-semibold transition-colors">
+                          <Play size={12} fill="white" /> Écouter
+                        </button>
+                      ) : (
+                        <button onClick={podcastStop}
+                          className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold transition-colors">
+                          ⏹ Stop
+                        </button>
+                      )}
+                    </div>
+                    <div className="text-white/30 text-xs">
+                      {podcastPlaying ? "Voix de synthèse • fr-FR" : "Lecture audio via synthèse vocale"}
+                    </div>
+                  </div>
+                )}
+
+                {/* Copy / Download / Close */}
+                <div className="flex items-center gap-2">
+                  <button onClick={() => navigator.clipboard.writeText(podcastTab === "plan" ? podcastContent : podcastScript)}
+                    className="flex items-center gap-2 px-3 py-2 bg-pink-500/15 hover:bg-pink-500/25 text-pink-300 rounded-lg text-xs transition-colors">
+                    <Copy size={12} /> Copier {podcastTab === "plan" ? "plan" : "script"}
+                  </button>
+                  {podcastScript && (
+                    <button onClick={downloadPodcastScript}
+                      className="flex items-center gap-2 px-3 py-2 bg-white/[0.05] hover:bg-white/10 text-white/60 rounded-lg text-xs transition-colors">
+                      <FileDown size={12} /> Télécharger .txt
+                    </button>
+                  )}
+                  <button onClick={() => { podcastStop(); setPodcastIdx(null); setPodcastContent(""); setPodcastScript(""); }}
+                    className="px-3 py-2 bg-white/[0.04] hover:bg-white/10 text-white/40 rounded-lg text-xs transition-colors ml-auto">
+                    Fermer
+                  </button>
+                </div>
               </div>
             )}
           </div>

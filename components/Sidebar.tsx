@@ -68,6 +68,7 @@ const SECTIONS = [
     label: "Contenu Dérivé",
     items: [
       { href: "/audiobook", icon: Headphones,  label: "Audiobook Studio" },
+      { href: "/podcast",   icon: Megaphone,   label: "Podcast Studio 🎙️" },
       { href: "/course",    icon: GraduationCap, label: "Book → Formation" },
       { href: "/ip",        icon: Network,     label: "IP Expansion" },
     ],

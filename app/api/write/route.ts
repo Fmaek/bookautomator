@@ -548,52 +548,64 @@ La sÃ©rie doit crÃ©er une progression logique et donner envie de lire le sui
       return NextResponse.json({ summary: completion.choices[0].message.content || "" });
     }
 
-    // â”€â”€ PODCAST EPISODE PLANNER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── PODCAST EPISODE (plan + script lisible) ──────────────────────────────
     if (action === "podcast") {
-      const { chapterTitle, content, bookTitle, chapterIndex } = body;
-      const completion = await groq.chat.completions.create({
-        model: MODEL,
-        messages: [
-          { role: "system", content: "Tu es expert en podcasting et en adaptation de contenu de livre pour le format audio." },
-          { role: "user", content: `CrÃ©e un plan d'Ã©pisode de podcast basÃ© sur ce chapitre du livre "${bookTitle}".
-Chapitre ${chapterIndex}: "${chapterTitle}"
+      const { chapterTitle, content, bookTitle, chapterIndex, chapters: allChapters, mode: podMode } = body as {
+        chapterTitle?: string; content?: string; bookTitle?: string; chapterIndex?: number;
+        chapters?: { title: string; content: string }[]; mode?: "chapter" | "full";
+      };
 
-Extrait du chapitre:
-${(content || "").substring(0, 2000)}
+      const isFullBook = podMode === "full" && allChapters && allChapters.length > 0;
+      const bookContent = isFullBook
+        ? allChapters!.map((c: {title:string;content:string}, i: number) => `Chapitre ${i + 1} — ${c.title}:\n${(c.content || "").substring(0, 800)}`).join("\n\n")
+        : (content || "").substring(0, 3000);
+      const episodeTitle = isFullBook ? `Livre complet — ${bookTitle}` : `Chapitre ${chapterIndex} — ${chapterTitle}`;
+      const durationWords = isFullBook ? "12-18 minutes (~1800-2700 mots)" : "6-10 minutes (~900-1500 mots)";
 
-Structure l'Ã©pisode ainsi:
-## ðŸŽ™ï¸ TITRE DE L'Ã‰PISODE
-[titre accrocheur, diffÃ©rent du chapitre]
+      const [planRes, scriptRes] = await Promise.all([
+        groq.chat.completions.create({
+          model: MODEL,
+          messages: [
+            { role: "system", content: "Tu es un expert en podcasting francophone. Tu crées des plans d'épisodes engageants pour livres francophones et africains." },
+            { role: "user", content: `Crée le PLAN DÉTAILLÉ d'un épisode podcast: "${episodeTitle}" du livre "${bookTitle}".
 
-## â±ï¸ DURÃ‰E ESTIMÃ‰E
-[X-Y minutes]
+Contenu:
+${bookContent}
 
-## ðŸª ACCROCHE (0-30 sec)
-[phrase d'accroche percutante pour capter l'attention immÃ©diatement]
+Structure requise:
+## 🎙️ TITRE ÉPISODE
+## ⏱️ DURÉE ESTIMÉE
+## 🪝 ACCROCHE (0-30s)
+## 📋 INTRO (30s-2min)
+## 🔑 POINTS CLÉS (3-5)
+## 💡 HISTOIRE/EXEMPLE
+## 🎯 OUTRO + CTA
+## 📝 NOTES PRÉPARATION` },
+          ],
+          temperature: 0.8, max_tokens: 1500,
+        }),
+        groq.chat.completions.create({
+          model: MODEL,
+          messages: [
+            { role: "system", content: "Tu es un auteur de scripts podcasts professionnels en français. Tu écris exactement ce que l'animateur dit mot pour mot, de façon naturelle et orale. Pas de markdown — texte naturel à lire à voix haute." },
+            { role: "user", content: `Écris le SCRIPT COMPLET mot-pour-mot d'un épisode podcast sur: "${episodeTitle}" du livre "${bookTitle}".
 
-## ðŸ“‹ INTRO (30 sec - 2 min)
-[prÃ©sentation du sujet + ce que l'auditeur va apprendre]
+Contenu source:
+${bookContent}
 
-## ðŸ”‘ POINTS CLÃ‰S (liste de 4-6 avec dÃ©veloppement)
-1. [Point + dÃ©veloppement oral (2-3 phrases)]
-2. ...
+Règle: écris EXACTEMENT ce que l'animateur dit, naturellement. Commence par une accroche directe. Utilise [PAUSE] et [EMPHASE] pour le rythme. Durée cible: ${durationWords}. Termine par un CTA pour le livre. Commence maintenant:` },
+          ],
+          temperature: 0.85, max_tokens: 2500,
+        }),
+      ]);
 
-## ðŸ’¡ ANECDOTE / EXEMPLE CONCRET
-[histoire courte ou exemple Ã  raconter]
-
-## â“ QUESTIONS POUR UN INVITÃ‰ (si applicable)
-[3-5 questions si tu avais un expert en invitÃ©]
-
-## ðŸŽ¯ CALL TO ACTION FINAL
-[invitation Ã  acheter le livre / s'abonner / partager]
-
-## ðŸ“ NOTES DE PRÃ‰PARATION
-[conseils de prÃ©sentation, ton recommandÃ©, points Ã  ne pas oublier]` },
-        ],
-        temperature: 0.8, max_tokens: 2000,
+      return NextResponse.json({
+        podcast: planRes.choices[0].message.content || "",
+        script: scriptRes.choices[0].message.content || "",
+        episodeTitle,
       });
-      return NextResponse.json({ podcast: completion.choices[0].message.content || "" });
     }
+
 
     // â”€â”€ CONTINUE WRITING â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (action === "continue") {
