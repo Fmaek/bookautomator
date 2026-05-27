@@ -1000,24 +1000,85 @@ TEXTE GÃ‰NÃ‰RÃ‰:
     if (action === "emotional_arc") {
       const { bookTitle, chapters } = body;
       const chapterList = (chapters as { title: string; content: string }[])
-        .map((c, i) => `CH${i + 1}: "${c.title}" â€” ${c.content.substring(0, 200)}`).join("\n");
+        .map((c, i) => `CH${i + 1}: "${c.title}" — ${(c.content || "").substring(0, 250)}`).join('\n');
+
       const completion = await groq.chat.completions.create({
         model: MODEL,
         messages: [
-          { role: "system", content: "Tu es analyste littÃ©raire expert en psychologie du lecteur. RÃ©ponds uniquement en JSON valide." },
-          { role: "user", content: `Analyse l'arc Ã©motionnel du livre "${bookTitle}".
+          {
+            role: "system",
+            content: "Tu es analyste litteraire expert en psychologie du lecteur, en dramaturgie et en structure narrative. Tu reponds UNIQUEMENT en JSON valide, sans texte autour.",
+          },
+          {
+            role: "user",
+            content: `Analyse complete de l'arc emotionnel du livre "${bookTitle}".
+
 Chapitres:
 ${chapterList}
 
-Pour chaque chapitre: intensity (0-100), emotion dominante, note (1 phrase).
-JSON:
-{"arcs":[{"chapter":1,"title":"titre","intensity":45,"emotion":"espoir","note":"..."}],"globalNote":"analyse globale 2 phrases"}` },
+Reponds UNIQUEMENT avec ce JSON (complet, valide):
+{
+  "arcs": [
+    {
+      "chapter": 1,
+      "title": "titre du chapitre",
+      "intensity": 65,
+      "emotion": "espoir",
+      "subEmotion": "melancolie",
+      "note": "une phrase sur ce qui se passe emotionnellement",
+      "isKeyMoment": false,
+      "keyMomentType": null
+    }
+  ],
+  "globalNote": "analyse globale du livre en 2-3 phrases",
+  "pattern": {
+    "name": "ex: Voyage du Heros / Tragedie / Crescendo / Montagne Russe / En U / Chute Libre / Renaissance",
+    "description": "2-3 phrases expliquant pourquoi ce pattern s'applique a ce livre",
+    "coherenceScore": 78,
+    "comparison": "ex: Proche de L'Alchimiste / Rappelle La Metamorphose / Structure similaire a Toni Morrison"
+  },
+  "dynamism": {
+    "score": 72,
+    "label": "ex: Tres dynamique / Dynamique / Moyen / Monotone",
+    "weakChapters": [2, 5],
+    "overloadedChapters": [8],
+    "recommendations": [
+      { "chapter": 2, "issue": "ex: Trop plat, pas de variation d'intensite", "suggestion": "suggestion concrete en 1-2 phrases" }
+    ]
+  },
+  "turningPoints": [
+    {
+      "chapter": 3,
+      "fromEmotion": "colere",
+      "toEmotion": "espoir",
+      "type": "climax",
+      "description": "description de la bascule et son impact narratif"
+    }
+  ]
+}
+
+Regles:
+- intensity entre 0 et 100
+- emotion parmi: espoir, joie, surprise, peur, colere, tristesse, serenite, tension, mystere, revelation, amour, honte, deuil, extase, angoisse
+- subEmotion: une 2eme emotion differente de emotion principale
+- isKeyMoment: true si c'est un climax, nadir, revelation ou retournement majeur
+- keyMomentType: "climax" | "nadir" | "revelation" | "twist" | null
+- turningPoints: les 2-4 moments de bascule emotionnelle les plus importants
+- coherenceScore et dynamism.score entre 0 et 100`,
+          },
         ],
-        temperature: 0.4, max_tokens: 2000,
+        temperature: 0.45,
+        max_tokens: 3500,
       });
       const raw = completion.choices[0].message.content?.trim() || "{}";
-      return NextResponse.json(JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()));
+      try {
+        const jsonStr = extractJson(raw);
+        return NextResponse.json(JSON.parse(jsonStr));
+      } catch {
+        return NextResponse.json({ _error: "parse_failed" }, { status: 422 });
+      }
     }
+
 
     // â”€â”€ PRICE OPTIMIZER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (action === "price_optimizer") {
