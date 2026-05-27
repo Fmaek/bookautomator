@@ -33,11 +33,11 @@ function cleanText(text: string): string {
 /** Extrait le premier objet JSON valide d'une chaÃ®ne */
 function extractJson(raw: string): string {
   const clean = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-  // Try array first, then object
-  const arrMatch = clean.match(/\[[\s\S]*\]/);
-  if (arrMatch) return arrMatch[0];
+  // Try object first (most API responses return an object), then array
   const objMatch = clean.match(/\{[\s\S]*\}/);
-  return objMatch ? objMatch[0] : "{}";
+  if (objMatch) return objMatch[0];
+  const arrMatch = clean.match(/\[[\s\S]*\]/);
+  return arrMatch ? arrMatch[0] : "{}";
 }
 
 export async function POST(req: NextRequest) {
