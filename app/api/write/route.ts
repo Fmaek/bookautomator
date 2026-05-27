@@ -51,21 +51,45 @@ export async function POST(req: NextRequest) {
   try {
     // â”€â”€ PLAN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (action === "plan") {
-      const { title, category, description, style } = body;
-      const isPoem = category?.includes("PoÃ©si");
-      const styleNote = style ? `Style d'Ã©criture: ${style}.` : "";
+      const { title, category, description, style, novelCharacters, novelTwist1, novelTwist2, novelUniverse, novelGenre } = body;
+      const isPoem = category?.includes("Poési");
+      const isNovel = category?.includes("Roman");
+      const styleNote = style ? `Style d'écriture: ${style}.` : "";
+
+      if (isNovel) {
+        const charLines = ((novelCharacters || []) as {name:string;role:string;desc:string}[])
+          .filter((c: {name:string;role:string;desc:string}) => c.name || c.desc)
+          .map((c: {name:string;role:string;desc:string}) => `- ${c.role}${c.name ? ` (${c.name})` : ""}: ${c.desc || "à définir"}`)
+          .join("\n");
+        const twistsLine = [
+          novelTwist1 ? `Plot Twist 1: ${novelTwist1}` : "",
+          novelTwist2 ? `Plot Twist 2: ${novelTwist2}` : "",
+        ].filter(Boolean).join("\n");
+
+        const novelCompletion = await groq.chat.completions.create({
+          model: MODEL,
+          messages: [
+            { role: "system", content: "Tu es un romancier expert (prix littéraire, best-seller international). Tu réponds UNIQUEMENT en JSON valide, sans markdown." },
+            { role: "user", content: `Crée le plan complet d'un roman en 3 actes pour ce projet:\n\nTITRE: "${title}"\nGENRE: ${novelGenre || "Drame"}\nUNIVERS / LIEU / ÉPOQUE: ${novelUniverse || "contemporain"}\nTHÈME CENTRAL: ${description || "à définir"}\n\nPERSONNAGES:\n${charLines || "À développer selon le genre"}\n\nPLOT TWISTS À PLACER:\n${twistsLine || "Invente 2 plot twists puissants adaptés au genre"}\n\nINSTRUCTIONS:\n- 10 à 12 chapitres (pas plus, pas moins)\n- Structure en 3 actes: Acte I (ch. 1-3: mise en place + conflit initial), Acte II (4-9: montée en tension, retournements), Acte III (10-12: climax + résolution)\n- Plot Twist 1 au chapitre 5, Plot Twist 2 au chapitre 9\n- Titres de chapitres évocateurs, cinématographiques, jamais "Chapitre 1"\n- La bible doit inclure pour chaque personnage: nom complet, âge, physique, psychologie, secret, arc narratif\n- Réponds UNIQUEMENT avec ce JSON valide:\n{\n  "chapters": ["Titre ch.1", "Titre ch.2", ...],\n  "bible": "BIBLE DES PERSONNAGES:\n\n[contenu complet]\n\nSTRUCTURE NARRATIVE:\n[résumé acte par acte]"\n}` },
+          ],
+          temperature: 0.85, max_tokens: 2500,
+        });
+        const novelText = novelCompletion.choices[0].message.content?.trim() || "{}";
+        const novelJsonStr = extractJson(novelText);
+        try {
+          return NextResponse.json(JSON.parse(novelJsonStr));
+        } catch {
+          return NextResponse.json({ chapters: ["Prologue", "L'éveil", "Les ombres", "Premier sang", "Le retournement", "Nuit profonde", "Alliances brisées", "La vérité surgit", "Effondrement", "Rédemption", "L'ultime choix", "Épilogue"], bible: "" });
+        }
+      }
+
       const completion = await groq.chat.completions.create({
         model: MODEL,
         messages: [
-          { role: "system", content: "Tu es un expert en crÃ©ation de livres Ã  succÃ¨s. RÃ©ponds uniquement en JSON valide, sans markdown." },
+          { role: "system", content: "Tu es un expert en création de livres à succès. Réponds uniquement en JSON valide, sans markdown." },
           { role: "user", content: isPoem
-            ? `CrÃ©e un recueil de 10-12 poÃ¨mes pour ce livre en franÃ§ais.
-Titre: "${title}" ${styleNote}
-RÃ©ponds UNIQUEMENT avec ce JSON: {"chapters": ["Titre poÃ¨me 1", ...]}`
-            : `CrÃ©e un plan de 7-9 chapitres percutants pour ce livre en franÃ§ais.
-Titre: "${title}" | CatÃ©gorie: ${category || "Non-fiction"} | Brief: ${description || "Livre pratique"} ${styleNote}
-Titres accrocheurs, pas juste "Chapitre 1".
-RÃ©ponds UNIQUEMENT avec ce JSON: {"chapters": ["Titre 1", "Titre 2", ...]}` },
+            ? `Crée un recueil de 10-12 poèmes pour ce livre en français.\nTitre: "${title}" ${styleNote}\nRéponds UNIQUEMENT avec ce JSON: {"chapters": ["Titre poème 1", ...]}`
+            : `Crée un plan de 7-9 chapitres percutants pour ce livre en français.\nTitre: "${title}" | Catégorie: ${category || "Non-fiction"} | Brief: ${description || "Livre pratique"} ${styleNote}\nTitres accrocheurs, pas juste "Chapitre 1".\nRéponds UNIQUEMENT avec ce JSON: {"chapters": ["Titre 1", "Titre 2", ...]}` },
         ],
         temperature: 0.8, max_tokens: 1024,
       });
@@ -74,9 +98,61 @@ RÃ©ponds UNIQUEMENT avec ce JSON: {"chapters": ["Titre 1", "Titre 2", ...]}` }
       return NextResponse.json(JSON.parse(clean));
     }
 
+
     // â”€â”€ CHAPTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (action === "chapter") {
       const { title, chapterTitle, chapterIndex, totalChapters, category, style } = body;
+      const isNovel = category?.includes("Roman");
+
+      if (isNovel) {
+        const { novelBible, novelGenre, novelTwist1, novelTwist2, description } = body;
+        const act = chapterIndex <= 3 ? "Acte I — Mise en place" : chapterIndex <= 9 ? "Acte II — Confrontation et montée en tension" : "Acte III — Climax et résolution";
+        const isTwistChapter = chapterIndex === 5 || chapterIndex === 9;
+        const twistNote = isTwistChapter
+          ? `\n\nATTENTION — CE CHAPITRE CONTIENT UN PLOT TWIST MAJEUR:\n${chapterIndex === 5 ? (novelTwist1 || "Premier grand retournement") : (novelTwist2 || "Deuxième grand retournement")}\nAmène le twist naturellement, avec des indices semés dans le chapitre avant de le révéler en fin de chapitre de façon percutante.`
+          : "";
+
+        const novelStylePrompts: Record<string, string> = {
+          "Immersif & sensoriel": "Écris avec une richesse sensorielle totale — ce que les personnages voient, sentent, entendent, touchent, goûtent. Chaque scène doit ancrer le lecteur physiquement dans l'espace. Les émotions passent par le corps et les sens, jamais par de l'explication directe.",
+          "Psychologique": "Plonge dans la psychologie profonde des personnages. Monologue intérieur, pensées contradictoires, failles, refoulé. Le drame se passe autant dans les têtes qu'à l'extérieur. Peu d'action visible, beaucoup de profondeur intérieure.",
+          "Cinématographique": "Écris comme un scénario de film : coupes nettes, plans séquences, dialogues secs et percutants. Commence in medias res, dynamique visuelle forte, rythme haletant.",
+          "Poétique": "Prose poétique, images métaphoriques, langage travaillé et musical. La beauté de la langue compte autant que l'histoire. Analogies profondes, phrases-images qui restent en mémoire.",
+          "Haletant & tendu": "Rythme effréné, phrases courtes, action constante, révélations successives. Le lecteur ne peut pas poser le livre. Chaque fin de paragraphe crée une nouvelle tension ou question.",
+        };
+        const narrativeStyle = novelStylePrompts[style || ""] || novelStylePrompts["Cinématographique"];
+
+        const completion = await groq.chat.completions.create({
+          model: MODEL,
+          messages: [
+            { role: "system", content: `Tu es un romancier de niveau international — prix Goncourt, best-seller New York Times. Tu maîtrises parfaitement la construction narrative, les arcs de personnages, le dialogue naturel, la tension dramatique. Tu écris en français avec une maîtrise littéraire totale. Tu n'utilises JAMAIS d'astérisques, de titres en gras, de tirets de liste. Que de la prose littéraire pure.` },
+            { role: "user", content: `Écris le chapitre ${chapterIndex} sur ${totalChapters} du roman "${title}" (genre: ${novelGenre || "Drame"}).
+
+TITRE DU CHAPITRE: "${chapterTitle}"
+POSITION DANS L'HISTOIRE: ${act} (chapitre ${chapterIndex}/${totalChapters})
+THÈME DU ROMAN: ${description || ""}
+
+BIBLE DES PERSONNAGES ET STRUCTURE NARRATIVE:
+${novelBible || "Personnages à définir selon le contexte du roman"}${twistNote}
+
+STYLE NARRATIF À APPLIQUER:
+${narrativeStyle}
+
+RÈGLES ABSOLUES:
+- 1500 à 2000 mots minimum — c'est un chapitre de roman, pas un article
+- Commence par une scène concrète et immersive, pas par une description générale
+- Dialogue naturel et révélateur de caractère (minimum 3 échanges significatifs)
+- Monologue intérieur d'au moins un personnage pour montrer sa psychologie
+- Respecte scrupuleusement la bible des personnages (noms, traits, secrets, relations)
+- Chaque chapitre doit faire avancer l'intrigue ET développer au moins un personnage
+- Termine sur une phrase ou scène qui donne envie de lire la suite immédiatement
+- Prose continue uniquement — zéro astérisque, zéro titre, zéro liste, zéro formatage markdown` },
+          ],
+          temperature: 0.9, max_tokens: 3500,
+        });
+        return NextResponse.json({ content: completion.choices[0].message.content || "" });
+      }
+
+
       const isPoem = category?.includes("PoÃ©si");
       const isKids = category?.includes("enfant");
       const isColoring = category?.includes("coloriage");

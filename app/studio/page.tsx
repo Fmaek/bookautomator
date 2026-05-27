@@ -186,19 +186,47 @@ function StudioContent() {
   const isKids = category.includes("enfant") || category.includes("coloriage");
   const isRiddle = category.includes("nigme");
   const isColoring = category.includes("coloriage");
+  const isNovel = category === "Roman / Fiction";
+
+  // ── Novel-specific state ──────────────────────────────────────────────────────
+  const [novelCharacters, setNovelCharacters] = useState([
+    { name: "", role: "Protagoniste (principal)", desc: "" },
+    { name: "", role: "Personnage principal 2", desc: "" },
+    { name: "", role: "Personnage principal 3", desc: "" },
+    { name: "", role: "Personnage secondaire 1", desc: "" },
+    { name: "", role: "Personnage secondaire 2", desc: "" },
+    { name: "", role: "Personnage de transition", desc: "" },
+  ]);
+  const [novelTwist1, setNovelTwist1] = useState("");
+  const [novelTwist2, setNovelTwist2] = useState("");
+  const [novelUniverse, setNovelUniverse] = useState("");
+  const [novelGenre, setNovelGenre] = useState("Drame");
+  const [novelBible, setNovelBible] = useState("");
+
+  const updateNovelChar = (i: number, field: "name" | "desc", val: string) =>
+    setNovelCharacters(prev => prev.map((c, j) => j === i ? { ...c, [field]: val } : c));
 
   const generatePlan = async () => {
     if (!title) return;
     setGenerating(true);
     setStep("plan");
     try {
+      const payload: Record<string, unknown> = { action: "plan", title, category, description, mode };
+      if (isNovel) {
+        payload.novelCharacters = novelCharacters;
+        payload.novelTwist1 = novelTwist1;
+        payload.novelTwist2 = novelTwist2;
+        payload.novelUniverse = novelUniverse;
+        payload.novelGenre = novelGenre;
+      }
       const res = await fetch("/api/write", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "plan", title, category, description, mode }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       const chapterTitles: string[] = data.chapters || ["Introduction", "Développement", "Conclusion"];
+      if (data.bible) setNovelBible(data.bible);
       setChapters(chapterTitles.map(t => ({ title: t, content: "", status: "pending" })));
     } catch {
       setChapters([
@@ -219,10 +247,17 @@ function StudioContent() {
       updated[i] = { ...updated[i], status: "writing" };
       setChapters([...updated]);
       try {
+        const chPayload: Record<string, unknown> = { action: "chapter", title, chapterTitle: chapters[i].title, chapterIndex: i + 1, totalChapters: chapters.length, category, style: writingStyle, description: bookDescription, themes: bookDescription, savedStyleDescription: selectedStyleDescription };
+        if (isNovel) {
+          chPayload.novelBible = novelBible;
+          chPayload.novelGenre = novelGenre;
+          chPayload.novelTwist1 = novelTwist1;
+          chPayload.novelTwist2 = novelTwist2;
+        }
         const res = await fetch("/api/write", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "chapter", title, chapterTitle: chapters[i].title, chapterIndex: i + 1, totalChapters: chapters.length, category, style: writingStyle, description: bookDescription, themes: bookDescription, savedStyleDescription: selectedStyleDescription }),
+          body: JSON.stringify(chPayload),
         });
         const data = await res.json();
         updated[i] = { ...updated[i], content: data.content || "", status: "done" };
@@ -870,9 +905,12 @@ function StudioContent() {
                 </div>
               </div>
               <div>
-                <label className="text-white/60 text-sm mb-2 block">Style d&apos;écriture</label>
+                <label className="text-white/60 text-sm mb-2 block">{isNovel ? "Style narratif" : "Style d'écriture"}</label>
                 <div className="flex flex-wrap gap-2">
-                  {["Motivant", "Storytelling", "Académique", "Humoristique", "Dramatique"].map(s => (
+                  {(isNovel
+                    ? ["Immersif & sensoriel", "Psychologique", "Cinématographique", "Poétique", "Haletant & tendu"]
+                    : ["Motivant", "Storytelling", "Académique", "Humoristique", "Dramatique"]
+                  ).map(s => (
                     <button key={s} onClick={() => { setWritingStyle(s); setSelectedStyleId(""); }}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${writingStyle === s && !selectedStyleId ? "bg-purple-500 text-white" : "bg-white/5 text-white/50 hover:text-white"}`}>
                       {s}
@@ -917,11 +955,83 @@ function StudioContent() {
               {isColoring && <div className="p-3 bg-pink-500/10 border border-pink-500/20 rounded-xl"><p className="text-pink-300 text-sm">🖍️ Mode Livre de coloriage — Descriptions de scènes à colorier, instructions simples pour enfants. Imprime et distribue !</p></div>}
               {isRiddle && !isColoring && <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl"><p className="text-amber-300 text-sm">🧩 Mode Énigmes — L&apos;IA génère des devinettes, puzzles et charades avec leurs réponses.</p></div>}
               {isKids && !isColoring && !isRiddle && <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl"><p className="text-blue-300 text-sm">👶 Mode Livre enfant — Langage ultra simple, phrases courtes, histoires colorées pour 3-8 ans.</p></div>}
-              <div>
-                <label className="text-white/60 text-sm mb-2 block">Brief (optionnel)</label>
-                <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
-                  placeholder="Décris ton audience, le ton, le message principal..." className={`${inputClass} resize-none`} />
-              </div>
+
+              {/* ── ROMAN / FICTION — config dédiée ── */}
+              {isNovel && (
+                <div className="space-y-4 p-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl">
+                  <p className="text-rose-300 text-xs font-semibold uppercase tracking-wider flex items-center gap-2">📖 Configuration Roman</p>
+
+                  {/* Genre */}
+                  <div>
+                    <label className="text-white/50 text-xs mb-2 block">Genre narratif</label>
+                    <div className="flex flex-wrap gap-2">
+                      {["Drame","Thriller","Romance","Aventure","Fantaisie","Science-Fiction","Mystère","Historique"].map(g => (
+                        <button key={g} type="button" onClick={() => setNovelGenre(g)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${novelGenre === g ? "bg-rose-500 text-white" : "bg-white/5 text-white/40 hover:text-white"}`}>
+                          {g}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Univers */}
+                  <div>
+                    <label className="text-white/50 text-xs mb-1.5 block">Univers / Époque / Lieu</label>
+                    <input value={novelUniverse} onChange={e => setNovelUniverse(e.target.value)}
+                      placeholder="Ex: Paris des années 90, société dystopique futuriste, village africain contemporain..."
+                      className={inputClass} />
+                  </div>
+
+                  {/* Personnages */}
+                  <div>
+                    <label className="text-white/50 text-xs mb-2 block">Personnages</label>
+                    <div className="space-y-2">
+                      {novelCharacters.map((c, i) => (
+                        <div key={i} className={`p-2.5 rounded-xl border space-y-1.5 ${i < 3 ? "border-rose-500/20 bg-rose-500/5" : i < 5 ? "border-orange-500/15 bg-orange-500/5" : "border-white/8 bg-white/3"}`}>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-semibold shrink-0 ${i < 3 ? "text-rose-400" : i < 5 ? "text-orange-400" : "text-white/40"}`}>{c.role}</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            <input value={c.name} onChange={e => updateNovelChar(i, "name", e.target.value)}
+                              placeholder="Prénom" className="bg-black/30 border border-white/8 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-rose-500/40 col-span-1" />
+                            <input value={c.desc} onChange={e => updateNovelChar(i, "desc", e.target.value)}
+                              placeholder="Description courte — traits, motivations, secrets..." className="bg-black/30 border border-white/8 rounded-lg px-2 py-1.5 text-white/70 text-xs focus:outline-none focus:border-rose-500/40 col-span-2" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Plot Twists */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-white/50 text-xs mb-1.5 block flex items-center gap-1">💥 Plot Twist 1</label>
+                      <textarea value={novelTwist1} onChange={e => setNovelTwist1(e.target.value)} rows={2}
+                        placeholder="Ex: Le détective est en réalité le meurtrier qu'il cherche..." className={`${inputClass} resize-none text-xs`} />
+                    </div>
+                    <div>
+                      <label className="text-white/50 text-xs mb-1.5 block flex items-center gap-1">💥 Plot Twist 2</label>
+                      <textarea value={novelTwist2} onChange={e => setNovelTwist2(e.target.value)} rows={2}
+                        placeholder="Ex: La ville entière savait la vérité depuis le début..." className={`${inputClass} resize-none text-xs`} />
+                    </div>
+                  </div>
+
+                  {/* Thème */}
+                  <div>
+                    <label className="text-white/50 text-xs mb-1.5 block">Thème central et ambiance du roman</label>
+                    <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2}
+                      placeholder="Ex: Trahison, rédemption et identité dans une ville corrompue. Ambiance sombre et psychologique..." className={`${inputClass} resize-none`} />
+                  </div>
+                </div>
+              )}
+
+              {!isNovel && (
+                <div>
+                  <label className="text-white/60 text-sm mb-2 block">Brief (optionnel)</label>
+                  <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
+                    placeholder="Décris ton audience, le ton, le message principal..." className={`${inputClass} resize-none`} />
+                </div>
+              )}
               <button onClick={generatePlan} disabled={!title || generating}
                 className="flex items-center gap-2 px-6 py-3 bg-purple-500 hover:bg-purple-600 disabled:opacity-50 text-white rounded-xl font-medium transition-colors">
                 {generating ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
