@@ -1,5 +1,6 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Mic, Play, Square, Copy, FileDown, Loader2, BookOpen,
   ChevronRight, Radio, Headphones, Sparkles, RefreshCw,
@@ -9,9 +10,10 @@ import { getBooks, type Book } from "@/lib/books";
 type Tab = "plan" | "script";
 type PodMode = "chapter" | "full";
 
-export default function PodcastPage() {
+function PodcastInner() {
+  const searchParams = useSearchParams();
   const [books, setBooks] = useState<Book[]>([]);
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(searchParams.get("bookId") || "");
   const [chapterIdx, setChapterIdx] = useState(0);
   const [mode, setMode] = useState<PodMode>("chapter");
 
@@ -362,5 +364,13 @@ export default function PodcastPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function PodcastPage() {
+  return (
+    <Suspense>
+      <PodcastInner />
+    </Suspense>
   );
 }

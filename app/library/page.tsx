@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Library, BookOpen, Plus, Search, Edit3, Trash2, Send,
-  TrendingUp, Eye, Tag, Upload, X, FileText
+  TrendingUp, Eye, Tag, Upload, X, FileText, Mic
 } from "lucide-react";
 import Link from "next/link";
 import { getBooks, deleteBook, saveBook, newBook, type Book } from "@/lib/books";
@@ -274,6 +274,9 @@ export default function LibraryPage() {
                     <div className="flex items-center gap-1 shrink-0">
                       <Link href={`/read/${book.id}`} className="p-1.5 hover:bg-purple-500/20 rounded-lg transition-colors" title="Lire">
                         <Eye size={13} className="text-purple-400" />
+                      </Link>
+                      <Link href={`/podcast?bookId=${book.id}`} className="p-1.5 hover:bg-pink-500/20 rounded-lg transition-colors" title="Podcast Studio">
+                        <Mic size={13} className="text-pink-400/70 hover:text-pink-400" />
                       </Link>
                       <Link href="/studio" className="p-1.5 hover:bg-white/10 rounded-lg transition-colors" title="Modifier dans Studio">
                         <Edit3 size={13} className="text-white/40" />
