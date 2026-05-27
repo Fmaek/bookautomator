@@ -182,6 +182,7 @@ function StudioContent() {
 
   const selectedStyleDescription = savedStyles.find(s => s.id === selectedStyleId)?.styleDescription || "";
   const [categoryFocus, setCategoryFocus] = useState("");
+  const [categorySubStyle, setCategorySubStyle] = useState("");
 
   const isPoem = category.includes("Poési");
   const isKids = category.includes("enfant") || category.includes("coloriage");
@@ -211,7 +212,7 @@ function StudioContent() {
     setGenerating(true);
     setStep("plan");
     try {
-      const payload: Record<string, unknown> = { action: "plan", title, category, description, mode, categoryFocus };
+      const payload: Record<string, unknown> = { action: "plan", title, category, description, mode, categoryFocus, categorySubStyle };
       if (isNovel) {
         payload.novelCharacters = novelCharacters;
         payload.novelTwists = novelTwists.filter(t => t.trim());
@@ -246,7 +247,7 @@ function StudioContent() {
       updated[i] = { ...updated[i], status: "writing" };
       setChapters([...updated]);
       try {
-        const chPayload: Record<string, unknown> = { action: "chapter", title, chapterTitle: chapters[i].title, chapterIndex: i + 1, totalChapters: chapters.length, category, style: writingStyle, description: bookDescription, themes: bookDescription, savedStyleDescription: selectedStyleDescription, categoryFocus };
+        const chPayload: Record<string, unknown> = { action: "chapter", title, chapterTitle: chapters[i].title, chapterIndex: i + 1, totalChapters: chapters.length, category, style: writingStyle, description: bookDescription, themes: bookDescription, savedStyleDescription: selectedStyleDescription, categoryFocus, categorySubStyle };
         if (isNovel) {
           chPayload.novelBible = novelBible;
           chPayload.novelGenre = novelGenre;
@@ -321,6 +322,7 @@ function StudioContent() {
         prevChapterContent: idx > 0 ? chapters[idx - 1].content.slice(0, 600) : "",
         nextChapterContent: idx < chapters.length - 1 ? chapters[idx + 1].content.slice(0, 400) : "",
         categoryFocus,
+        categorySubStyle,
       };
       if (isNovel) {
         regenPayload.novelBible = novelBible;
@@ -924,14 +926,38 @@ function StudioContent() {
                 </div>
               </div>
               <div>
-                <label className="text-white/60 text-sm mb-2 block">{isNovel ? "Style narratif" : "Style d'écriture"}</label>
+                <label className="text-white/60 text-sm mb-2 block">
+                  {isPoem ? "Genre poétique" : isNovel ? "Style narratif" : "Style d'écriture"}
+                </label>
                 <div className="flex flex-wrap gap-2">
-                  {(isNovel
+                  {(isPoem
+                    ? ["Romantique", "Élégie / Triste", "Mélancolique", "Mystique", "Satirique", "Haïku", "Sonnet", "Vers libre"]
+                    : isNovel
                     ? ["Immersif & sensoriel", "Psychologique", "Cinématographique", "Poétique", "Haletant & tendu"]
+                    : category.includes("Business") || category.includes("Entrepren")
+                    ? ["Guide pratique", "Storytelling entrepreneur", "Leadership & vision", "Étude de cas"]
+                    : category.includes("inance") || category.includes("nvestiss")
+                    ? ["Épargne & budget", "Bourse & dividendes", "Immobilier", "Crypto & DeFi"]
+                    : (category.includes("ant") || category.includes("Bien")) && !category.includes("nfant")
+                    ? ["Nutrition & alimentation", "Fitness & performance", "Santé mentale", "Médecine naturelle"]
+                    : category.includes("piritual")
+                    ? ["Sagesse orientale", "Foi chrétienne", "Islam & soufisme", "Éveil intérieur"]
+                    : category.includes("veloppement") && !category.includes("nfant")
+                    ? ["Coach-action", "Memoir & récit", "Science comportementale", "Philosophie pratique"]
+                    : category.includes("uisine")
+                    ? ["Cuisine traditionnelle", "Cuisine fusion", "Cuisine santé", "Pâtisserie & boulangerie"]
+                    : category.includes("echnolog")
+                    ? ["Tutoriel pratique", "Architecture & systèmes", "IA & futur", "Vulgarisation"]
+                    : category.includes("veloppement") && category.includes("nfant")
+                    ? ["Montessori", "Parentalité positive", "Éveil & motricité", "Valeurs & émotions"]
                     : ["Motivant", "Storytelling", "Académique", "Humoristique", "Dramatique"]
                   ).map(s => (
-                    <button key={s} onClick={() => { setWritingStyle(s); setSelectedStyleId(""); }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${writingStyle === s && !selectedStyleId ? "bg-purple-500 text-white" : "bg-white/5 text-white/50 hover:text-white"}`}>
+                    <button key={s} onClick={() => {
+                      if (isPoem || isNovel) { setWritingStyle(s); setCategorySubStyle(s); }
+                      else { setCategorySubStyle(s); setWritingStyle(s); }
+                      setSelectedStyleId("");
+                    }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${(writingStyle === s || categorySubStyle === s) && !selectedStyleId ? "bg-purple-500 text-white" : "bg-white/5 text-white/50 hover:text-white"}`}>
                       {s}
                     </button>
                   ))}

@@ -110,7 +110,11 @@ RÈGLES:
 - Technologie: titres concrets et actionnables, progression logique, cas d'usage pratiques
 - Développement enfants: chapitres par compétence ou étape de développement, conseils parents concrets
 - Si le brief décrit un roman ou personnages, adapte en conséquence
-${body.categoryFocus ? `- FOCUS DEMANDÉ PAR L'AUTEUR: ${body.categoryFocus}` : ""}
+- Cuisine: chapitres = recettes ou techniques, progression du simple au complexe, variété des plats
+- Technologie: titres concrets et actionnables, progression logique, cas d'usage pratiques
+- Développement enfants: chapitres par compétence ou étape de développement, conseils parents concrets
+${body.categorySubStyle ? `- GENRE/STYLE CHOISI PAR L'AUTEUR: "${body.categorySubStyle}" — adapte la structure des chapitres à ce style spécifique` : ""}
+${body.categoryFocus ? `- FOCUS DEMANDÉ: ${body.categoryFocus}` : ""}
 Réponds UNIQUEMENT avec ce JSON: {"chapters": ["Titre 1", "Titre 2", ...]}` },
         ],
         temperature: 0.8, max_tokens: 1024,
@@ -124,7 +128,9 @@ Réponds UNIQUEMENT avec ce JSON: {"chapters": ["Titre 1", "Titre 2", ...]}` },
     // â”€â”€ CHAPTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (action === "chapter") {
       const { title, chapterTitle, chapterIndex, totalChapters, category, style } = body;
+      const { description: chDesc, themes: chThemes, savedStyleDescription: chSavedStyle, categoryFocus, categorySubStyle } = body;
       const isNovel = category?.includes("Roman");
+
 
       if (isNovel) {
         const { novelBible, novelGenre, novelTwists: chNovelTwists, description } = body;
@@ -232,18 +238,184 @@ Titre: "${chapterTitle}"
       }
 
       if (isPoem) {
-        const completion = await groq.chat.completions.create({
+        // Build sub-style specific poem prompt
+        const subStyle = categorySubStyle || style || "";
+
+        const poemStyleGuides: Record<string, string> = {
+          "Romantique": `Poème romantique sur "${chapterTitle}" pour le recueil "${title}" (${chapterIndex}/${totalChapters}).
+Style : vers libres chargés de sensualité douce, métaphores de la nature (mer, vent, lumière, saisons) comme miroir du sentiment amoureux. Musicalité naturelle, images sensuelles, émotion d'amour intense et délicat. Temps lents, respirations entre les vers.
+Aucun titre, aucun astérisque. Seulement des vers.`,
+
+          "Élégie / Triste": `Élégie sur "${chapterTitle}" pour le recueil "${title}" (${chapterIndex}/${totalChapters}).
+Style : poème de deuil et de perte — rythme lent, images sombres (nuit, cendres, silence, absences), répétitions douloureuses qui imitent le souvenir qui revient. Ton sobre et retenu, jamais mélodramatique. La douleur est dans les détails concrets, pas dans les mots qui la nomment.
+Aucun titre, aucun astérisque. Seulement des vers.`,
+
+          "Mélancolique": `Poème mélancolique sur "${chapterTitle}" pour le recueil "${title}" (${chapterIndex}/${totalChapters}).
+Style : entre tristesse et beauté — la mélancolie est contemplative, pas désespérée. Images de transition (crépuscule, automne, brume, reflets). Rythme lent et méditatif. Questionnement existentiel doux. La beauté du monde rend la douleur encore plus présente.
+Aucun titre, aucun astérisque. Seulement des vers.`,
+
+          "Mystique": `Poème mystique sur "${chapterTitle}" pour le recueil "${title}" (${chapterIndex}/${totalChapters}).
+Style : vers suggestifs et ésotériques — symboles de transcendance (lumière intérieure, souffle, vide fertile, silence habité). Langage approximatif du mystère, images qui pointent vers l'indicible sans le nommer. Inspiration : Rumi, Khalil Gibran, Saint-Jean de la Croix.
+Aucun titre, aucun astérisque. Seulement des vers.`,
+
+          "Satirique": `Poème satirique sur "${chapterTitle}" pour le recueil "${title}" (${chapterIndex}/${totalChapters}).
+Style : ironie mordante et précise — critique sociale déguisée en éloge, retournements de sens inattendus. Ton décalé, humour noir ou absurde. Rythme vif, jeux de mots ciblés. Inspiration : Prévert, Vian, poésie engagée. La satire doit piquer sans devenir pamphlet.
+Aucun titre, aucun astérisque. Seulement des vers.`,
+
+          "Haïku": `Compose 3 haïkus sur le thème "${chapterTitle}" pour le recueil "${title}" (${chapterIndex}/${totalChapters}).
+STRUCTURE STRICTE : chaque haïku = exactement 3 vers. Vers 1 : 5 syllabes. Vers 2 : 7 syllabes. Vers 3 : 5 syllabes.
+ESSENCE : un moment précis saisi dans sa fugacité — image sensorielle de la nature, juxtaposition surprenante, kigo (mot de saison). Pas d'explication, pas de sentiment nommé. Juste l'image qui fait résonner l'émotion seule. Inspiration : Bashô, Issa, Buson.
+Sépare les 3 haïkus par une ligne vide. Aucun titre numéroté, aucun commentaire.`,
+
+          "Sonnet": `Écris un sonnet sur "${chapterTitle}" pour le recueil "${title}" (${chapterIndex}/${totalChapters}).
+STRUCTURE : 14 vers en deux formes possibles — Pétrarquien (2 quatrains ABBA ABBA + 2 tercets CCD EED) ou Shakespearien (3 quatrains ABAB CDCD EFEF + 1 distique GG).
+RÈGLES : alexandrins (12 syllabes) ou décasyllabes. Rimes soignées et naturelles. Le thème se développe, se retourne et se résout dans le distique ou le tercet final. Inspiration : Du Bellay, Ronsard, Baudelaire, Shakespeare.
+Aucun titre, aucun commentaire. Juste les 14 vers.`,
+
+          "Vers libre": `Poème en vers libres sur "${chapterTitle}" pour le recueil "${title}" (${chapterIndex}/${totalChapters}).
+Style : liberté formelle totale — pas de rime imposée, pas de métrique fixe. Mais attention au RYTHME : les coupes de vers sont des respirations signifiantes, chaque retour à la ligne est un geste poétique. Images fortes, précises, inattendues. La rupture des vers crée le sens. Inspiration : Apollinaire, Supervielle, Saint-John Perse.
+Aucun titre, aucun astérisque, aucun commentaire.`,
+        };
+
+        const poemInstruction = poemStyleGuides[subStyle] || `Poème sur "${chapterTitle}" du recueil "${title}" (${chapterIndex}/${totalChapters}).
+Court et dense, adapté à l'émotion du titre — images fortes, rythme soutenu, métaphores originales. Termine sur une image inoubliable.
+Aucun astérisque, aucun tiret, aucun titre.`;
+
+        const poemCompletion = await groq.chat.completions.create({
           model: MODEL,
           messages: [
-            { role: "system", content: SYSTEM_AUTHOR },
-            { role: "user", content: `Ã‰cris le poÃ¨me "${chapterTitle}" du recueil "${title}" (${chapterIndex}/${totalChapters}).
-Court et dense, adapté à l'émotion du titre — sans longueur imposée, seulement ce qui est nécessaire. Images fortes, rythme soutenu, métaphores originales.
-Termine sur une image inoubliable en une seule ligne.
-Aucun astÃ©risque, aucun tiret de liste, aucun titre, aucun commentaire.` },
+            { role: "system", content: "Tu es un poète de premier rang — maîtrise parfaite des formes classiques et modernes. Chaque vers compte. Tu ne te répètes jamais, tu surprends toujours. Aucun markdown, aucun commentaire, seulement des vers." },
+            { role: "user", content: poemInstruction },
           ],
-          temperature: 0.9, max_tokens: 500,
+          temperature: 0.92, max_tokens: 600,
         });
-        return NextResponse.json({ content: completion.choices[0].message.content || "" });
+        return NextResponse.json({ content: poemCompletion.choices[0].message.content || "" });
+      }
+
+      // ── Sub-style literary system — full writing conventions per category ──
+      const subStyle = categorySubStyle || "";
+      const categorySubStyleGuides: Record<string, string> = {
+        // ─── BUSINESS ─────────────────────────────────────────────────────
+        "Guide pratique": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en mode GUIDE PRATIQUE.
+Structure de manuel actionnable : problème → solution → étapes numérotées → exemple réel → résultat attendu. Tutoie le lecteur. Chaque paragraphe = une action concrète. Donne des chiffres, des délais, des outils nommés. Termine par un résumé des 3 points clés et une action à faire dans les 24h. Style direct et efficace comme un consultant qui facture à l'heure.`,
+
+        "Storytelling entrepreneur": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en mode STORYTELLING ENTREPRENEUR.
+Commence par une anecdote personnelle vraie ou réaliste — échec cuisinant, moment de doute, pivot inattendu. Développe avec honnêteté : les erreurs, les leçons apprises dans la douleur, ce qui a vraiment fonctionné. Ton authentique, jamais poli ou corporate. Le lecteur doit se voir dans l'histoire. Insights pratiques émergent naturellement du récit. Style Brené Brown x Gary Vaynerchuk.`,
+
+        "Leadership & vision": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en mode LEADERSHIP & VISION.
+Ouvre avec une idée provocante ou contre-intuitive — une thèse que le lecteur n'attendait pas. Développe par des analogies inattendues, des principes universels illustrés par l'histoire ou l'actualité. Questionne les croyances reçues. Ton philosophique mais ancré dans le business réel. Style Seth Godin, Simon Sinek. Phrases courtes, rhythm répétitif qui ancre les idées.`,
+
+        "Étude de cas": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en mode ÉTUDE DE CAS.
+Analyse une entreprise ou un entrepreneur réel (ou réaliste). Structure : contexte → défi → décision critique → résultat → leçons transférables. Chiffres précis, dates, faits vérifiables. Analyse les erreurs aussi bien que les succès. Identifie les principes reproductibles. Style journaliste d'affaires + professeur HEC.`,
+
+        // ─── FINANCE ──────────────────────────────────────────────────────
+        "Épargne & budget": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" sur l'ÉPARGNE & BUDGET.
+Style Dave Ramsey x budget africain : conseils simples, concrets, immédiats. Exemples avec des montants accessibles. Méthodes nommées (enveloppes, 50-30-20, fond d'urgence). Calculs simples montrés étape par étape. Ton bienveillant mais direct, sans condescendance. Adapté à quelqu'un qui commence à zéro.`,
+
+        "Bourse & dividendes": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" sur la BOURSE & DIVIDENDES.
+Style Warren Buffett vulgarisé : investissement long terme, valeur intrinsèque, patience. Explique les ratios (P/E, rendement dividendes) avec des analogies simples. Exemples d'actions réelles. Montre les calculs d'intérêts composés sur 10-20 ans. Démystifie la bourse sans sur-promettre. Ton rigoureux mais accessible.`,
+
+        "Immobilier": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" sur l'IMMOBILIER.
+Du concret : calcul du cash-flow, levier bancaire, gestion locative, fiscalité. Exemples chiffrés réalistes (prix, loyers, charges). Les pièges à éviter (vacance locative, travaux imprévus). Étapes d'un premier achat. Ton de quelqu'un qui a fait les erreurs et les partage.`,
+
+        "Crypto & DeFi": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" sur les CRYPTO & DeFi.
+Vulgarise sans simplifier : explique la technologie avec des analogies. Gestion du risque au centre. Exemples de stratégies réelles (DCA, staking, diversification). Met en garde contre les arnaques et le FOMO. Ton équilibré — ni FUD ni maximalism aveugle.`,
+
+        // ─── SANTÉ ────────────────────────────────────────────────────────
+        "Nutrition & alimentation": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" sur la NUTRITION.
+Science vulgarisée : explique les mécanismes biologiques simplement (insuline, inflammation, microbiome). Plan alimentaire concret ou liste d'aliments. Dénonce les mythes populaires avec des faits. Recette ou menu applicable immédiatement. Ton médical mais chaleureux, comme un nutritionniste ami.`,
+
+        "Fitness & performance": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" sur le FITNESS.
+Programme d'entraînement détaillé ou concept clé de la performance physique. Explique la physiologie derrière l'exercice (hypertrophie, VO2 max, récupération). Exercices décrits clairement, séries, répétitions, progression. Erreurs communes à éviter. Motivation réaliste — pas de promesses miraculeuses.`,
+
+        "Santé mentale": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" sur la SANTÉ MENTALE.
+Style TCC + pleine conscience : mécanismes psychologiques expliqués simplement (distorsions cognitives, schémas). Exercices concrets (journaling, exposition graduée, restructuration cognitive). Témoignage ou cas (anonymisé). Validation émotionnelle avant les conseils. Ton du thérapeute bienveillant.`,
+
+        "Médecine naturelle": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" sur la MÉDECINE NATURELLE.
+Plantes, huiles essentielles, ayurveda ou médecine traditionnelle africaine selon le contexte. Propriétés actives expliquées (phytochimie simplifiée). Protocoles d'utilisation précis (dosages, durées, contre-indications). Références aux traditions + science moderne. Ton rigoureux — pas de charlatanisme.`,
+
+        // ─── SPIRITUALITÉ ─────────────────────────────────────────────────
+        "Sagesse orientale": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en style SAGESSE ORIENTALE.
+Voix contemplative et profonde — bouddhisme, taoïsme, vedanta selon le contexte. Commence par une parabole ou un koan. Développe le concept (impermanence, non-attachement, présence) avec des images de la nature. Application concrète dans la vie quotidienne moderne. Cite des maîtres (Bouddha, Lao Tseu, Ramana Maharshi). Rythme lent, phrases qui invitent à la méditation.`,
+
+        "Foi chrétienne": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en style FOI CHRÉTIENNE.
+Ancré dans la Parole : verset biblique d'ouverture médité en profondeur. Développe avec la théologie pratique, témoignage de transformation, invitation à la prière. Ton d'un pasteur qui connaît ses brebis — chaleureux, exigeant avec amour. Prière ou acte de foi en clôture. Accessible aux croyants et aux chercheurs.`,
+
+        "Islam & soufisme": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en style ISLAM & SOUFISME.
+Commence par une invocation (Bismillah ou dou'a). Verset coranique ou hadith médité. Développe avec la dimension spirituelle intérieure (tazkiya, ihsan, dhikr). Sagesse soufie si approprié (Rumi, Ibn Arabi, Al-Ghazali). Application dans la vie du croyant contemporain. Langue respectueuse et élevée.`,
+
+        "Éveil intérieur": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en style ÉVEIL INTÉRIEUR.
+New Age / conscience — énergie, chakras, loi d'attraction, conscience quantique. Mais avec rigueur : évite le flou new age, ancre les concepts dans des pratiques concrètes (méditation, visualisation, journaling). Ton de guide spirituel moderne — Eckhart Tolle, Wayne Dyer. Question de réflexion profonde en clôture.`,
+
+        // ─── DÉVELOPPEMENT PERSONNEL ──────────────────────────────────────
+        "Coach-action": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en mode COACH-ACTION.
+Style Tony Robbins x David Goggins : énergie brute, tutoiement permanent, défis directs. Commence par une vérité inconfortable que le lecteur évite. Challenge ses croyances limitantes avec des questions percutantes. Donne des exercices concrets (liste à faire, challenge 30 jours, confrontation de peur). Pas de pitié, beaucoup de bienveillance. Appel à l'action immédiat et musclé.`,
+
+        "Memoir & récit": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en mode MEMOIR & RÉCIT.
+Style Brené Brown x Nelson Mandela : vulnérabilité courageuse. Commence par un moment de vie précis (honte, doute, effondrement) raconté avec détail sensoriel. Développe la transformation intérieure lentement — pas de raccourcis. Insights profonds émergent de l'expérience vécue, pas expliqués. Le lecteur se voit dans chaque ligne.`,
+
+        "Science comportementale": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en mode SCIENCE COMPORTEMENTALE.
+Style James Clear x Robert Cialdini : neurosciences et psychologie sociale appliquées. Commence par une étude ou expérience réelle (avec noms, contexte). Explique le mécanisme neurologique ou psychologique. Application pratique directe (système d'habitude, déclencheur, récompense). Données chiffrées et références crédibles. Ton de chercheur accessible.`,
+
+        "Philosophie pratique": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en mode PHILOSOPHIE PRATIQUE.
+Style stoïcien x existentialiste : Marcus Aurèle, Ryan Holiday, Seneca. Commence par une citation de philosophe. Développe la sagesse ancienne dans le contexte moderne. Questions existentielles profondes répondues par une pratique quotidienne concrète. Ton sobre, dense, méditatif. Chaque phrase pèse son poids.`,
+
+        // ─── CUISINE ──────────────────────────────────────────────────────
+        "Cuisine traditionnelle": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en style CUISINE TRADITIONNELLE.
+Recette complète avec histoire et âme : origine du plat, anecdote familiale ou culturelle. Ingrédients listés proprement avec quantités précises. Étapes détaillées mais lisibles. Astuces de grand-mère, variantes régionales. Ton chaleureux, transmission culturelle. La recette est un acte d'amour.`,
+
+        "Cuisine fusion": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en style CUISINE FUSION.
+Mariage inattendu de deux traditions culinaires. Explique le choix des associations (pourquoi ce mariage fonctionne aromatiquement et texturalement). Recette originale et précise. Présentation soignée décrite. Alternatives pour adapter à différentes cultures. Ton créatif et audacieux.`,
+
+        "Cuisine santé": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en style CUISINE SANTÉ.
+Recette nutritive avec profil macro (protéines, glucides, lipides, calories) indiqué. Substitutions saines expliquées (farine blanche → farine complète, sucre → alternatives). Bénéfices des ingrédients clés nommés brièvement. Préparation simple. Ton du nutritionniste gourmand — la santé ne sacrifie pas le plaisir.`,
+
+        "Pâtisserie & boulangerie": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en style PÂTISSERIE & BOULANGERIE.
+Précision absolue : grammes, températures, temps au four exact, taux d'hydratation pour le pain. Explique la chimie derrière (gluten, fermentation, émulsion, caramélisation). Erreurs classiques et comment les éviter. Étapes visuellement décrites. Ton du chef pâtissier exigeant mais pédagogue.`,
+
+        // ─── TECHNOLOGIE ──────────────────────────────────────────────────
+        "Tutoriel pratique": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en style TUTORIEL PRATIQUE.
+Projet ou fonctionnalité concret à réaliser. Étapes numérotées et précises. Snippets de code expliqués ligne par ligne si pertinent. Erreurs communes et solutions. Checkpoint à la fin de chaque section ("à ce stade, tu dois avoir..."). Ton du développeur senior qui mentor. Testable et reproductible.`,
+
+        "Architecture & systèmes": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en style ARCHITECTURE & SYSTÈMES.
+Design patterns, principes SOLID, scalabilité, performance. Diagrammes décrits textuellement. Trade-offs expliqués honnêtement — pas de solution parfaite. Exemples de systèmes réels (Netflix, Airbnb, WhatsApp). Ton du senior engineer qui a survécu à des millions d'utilisateurs.`,
+
+        "IA & futur": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" sur l'IA & LE FUTUR.
+Tendances technologiques actuelles expliquées simplement. Impacts concrets sur les métiers, la société, l'économie. Opportunités à saisir et risques à anticiper. Démocratise les concepts complexes (LLMs, agents, automatisation). Ton prospectiviste lucide — ni catastrophisme ni utopie naïve.`,
+
+        "Vulgarisation": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en style VULGARISATION TECHNOLOGIQUE.
+Style Malcolm Gladwell x Yuval Noah Harari appliqué à la tech. Explique des concepts complexes avec des analogies du quotidien. Pas de jargon non expliqué. Histoires humaines au centre de la technologie. Curiosité et émerveillement. Le lecteur comprend ET a envie d'en savoir plus.`,
+
+        // ─── DÉVELOPPEMENT ENFANTS ────────────────────────────────────────
+        "Montessori": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en style MONTESSORI.
+Principes Montessori appliqués : environnement préparé, liberté dans un cadre, apprentissage par l'expérience, périodes sensibles. Activités concrètes décrites étape par étape. Matériel simple et accessible. Posture de l'adulte (observer, ne pas intervenir). Ton du guide formé Montessori — respectueux de l'enfant comme être complet.`,
+
+        "Parentalité positive": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en style PARENTALITÉ POSITIVE.
+Communication Non Violente (CNV) appliquée à la relation parent-enfant. Besoins de l'enfant expliqués. Scénarios concrets : que dire, que faire dans telle situation. Exemples de phrases à utiliser et à éviter. Ton bienveillant et non-culpabilisant — il n'y a pas de parents parfaits. Exercice pratique en clôture.`,
+
+        "Éveil & motricité": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" sur l'ÉVEIL & MOTRICITÉ.
+Stade de développement précis concerné (0-3 mois, 6-12 mois, etc.). Activités sensorielles et motrices détaillées, matériel simple. Explication du développement neurologique derrière chaque activité. Signes de progression à observer. Ton du pédiatre ou éducateur spécialisé accessible.`,
+
+        "Valeurs & émotions": `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" sur les VALEURS & ÉMOTIONS.
+Intelligence émotionnelle chez l'enfant : reconnaître, nommer, gérer ses émotions. Histoire courte illustrant la valeur du chapitre (empathie, courage, honnêteté...). Activité parent-enfant pour ancrer la valeur. Dialogue modèle à reproduire. Ton doux et coloré, adapté à être lu avec l'enfant.`,
+      };
+
+      // If we have a matching sub-style, use it directly
+      if (subStyle && categorySubStyleGuides[subStyle]) {
+        const subStyleContent = categorySubStyleGuides[subStyle];
+        const subStyleCompletion = await groq.chat.completions.create({
+          model: MODEL,
+          messages: [
+            { role: "system", content: `${SYSTEM_AUTHOR} Tu maîtrises parfaitement les conventions d'écriture du genre "${subStyle}". Tu respectes ses codes littéraires avec précision.` },
+            { role: "user", content: subStyleContent + (themeContext ? `
+
+${themeContext}` : "") + (categoryFocus ? `
+
+FOCUS: ${categoryFocus}` : "") + noMarkdownReminder },
+          ],
+          temperature: 0.88, max_tokens: 2800,
+        });
+        return NextResponse.json({ content: subStyleCompletion.choices[0].message.content || "" });
       }
 
       const stylePrompts: Record<string, string> = {
@@ -290,7 +462,7 @@ Langue tendue, rythme haletant, prose dramatique continue.`,
       };
 
             // Contexte du livre injecté dans chaque chapitre pour préserver les thèmes
-      const { description, themes, savedStyleDescription, categoryFocus } = body;
+      const description = chDesc; const themes = chThemes; const savedStyleDescription = chSavedStyle;
       const themeContext = [
         description ? `DESCRIPTION DU LIVRE: ${description}` : "",
         themes      ? `THÈMES PRINCIPAUX À RESPECTER: ${themes}` : "",
@@ -348,7 +520,8 @@ Prose fluide, paragraphes de 3-5 lignes, rythme naturel. Longueur adaptée au co
     if (action === "regenerate") {
       const { title, chapterTitle, chapterIndex, totalChapters, category, style, instruction,
               description, themes, savedStyleDescription, allChapterTitles,
-              prevChapterContent, nextChapterContent, novelBible, novelGenre } = body;
+              prevChapterContent, nextChapterContent, novelBible, novelGenre,
+              categorySubStyle: regenSubStyle } = body;
 
       const isPoem = category?.includes("Poési");
       const isNovel = category?.includes("Roman");
@@ -427,15 +600,19 @@ RÈGLES ABSOLUES:
       }
 
       if (isPoem) {
-        const completion = await groq.chat.completions.create({
+        const pRegenStyle = regenSubStyle || style || "";
+        const poemRegenInstruction = pRegenStyle
+          ? `Réécris le poème "${chapterTitle}" du recueil "${title}" avec une approche entièrement nouvelle. ${instruction ? `Instruction: ${instruction}.` : ""} Genre/style: ${pRegenStyle} — respecte les conventions de ce genre poétique. Angle radicalement différent de la version précédente. Aucun astérisque ni tiret.`
+          : `Réécris le poème "${chapterTitle}" du recueil "${title}" avec une approche totalement différente. ${instruction || "Version plus émotionnelle et imagée."} Nouveau registre, nouvelles images, même émotion abordée différemment. Aucun astérisque ni tiret.`;
+        const poemRegenCompletion = await groq.chat.completions.create({
           model: MODEL,
           messages: [
-            { role: "system", content: SYSTEM_AUTHOR },
-            { role: "user", content: `Réécris le poème "${chapterTitle}" du recueil "${title}" avec une approche totalement différente. ${instruction || "Version plus émotionnelle et imagée."} Court et dense — sans longueur imposée, juste ce que l'émotion demande. Aucun astérisque ni tiret.` },
+            { role: "system", content: "Tu es un poète expert. Tu réécris des poèmes en changeant radicalement l'angle — nouvelles images, nouveau rythme, nouvelle entrée dans le thème. Jamais la même chose deux fois." },
+            { role: "user", content: poemRegenInstruction },
           ],
-          temperature: 0.92, max_tokens: 800,
+          temperature: 0.94, max_tokens: 800,
         });
-        return NextResponse.json({ content: completion.choices[0].message.content || "" });
+        return NextResponse.json({ content: poemRegenCompletion.choices[0].message.content || "" });
       }
 
       const styleNote = style ? `Style imposé: ${style}. ` : "";
@@ -450,6 +627,7 @@ ${contextBlock ? `\n${contextBlock}` : ""}
 
 Prose fluide et naturelle. Respecte la continuité avec les chapitres adjacents.
 CRUCIAL: Cette version doit être RADICALEMENT DIFFÉRENTE — nouvelle accroche, nouveaux exemples concrets, angle d'attaque inédit, histoire d'ouverture différente. Le lecteur ne doit jamais avoir l'impression de relire la même chose.
+${regenSubStyle ? `GENRE/STYLE DE L'OEUVRE: "${regenSubStyle}" — respecte absolument les conventions littéraires de ce genre.` : ""}
 Aucun astérisque, aucun sous-titre, aucune liste.${regenCategoryGuide ? `\n\n${regenCategoryGuide}` : ""}` },
         ],
         temperature: 0.88, max_tokens: 2800,
