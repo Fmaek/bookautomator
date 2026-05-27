@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import Groq from "groq-sdk";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
 export async function GET() {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return NextResponse.json({ trends: [] }, { status: 503 });
+  const groq = new Groq({ apiKey });
   try {
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",

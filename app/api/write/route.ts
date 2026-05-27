@@ -1,7 +1,6 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const MODEL = "llama-3.3-70b-versatile";
 
 const SYSTEM_AUTHOR = `Tu es un auteur professionnel francophone publiÃ© chez de grands Ã©diteurs.
@@ -42,6 +41,10 @@ function extractJson(raw: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return NextResponse.json({ error: "GROQ_API_KEY manquant" }, { status: 503 });
+  const groq = new Groq({ apiKey });
+
   const body = await req.json();
   const { action } = body;
 
