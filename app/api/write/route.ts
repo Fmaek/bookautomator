@@ -1217,44 +1217,99 @@ Chapitres: ${chapterList}
       return NextResponse.json({ course: cleanText(completion.choices[0].message.content || "") });
     }
 
-    // â”€â”€ READER AVATAR BUILDER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── READER AVATAR BUILDER ────────────────────────────────────────────────
     if (action === "reader_avatar") {
-      const { bookTitle, category, targetDescription } = body;
-      // Use random seed in prompt to guarantee variety between calls
-      const seeds = ["Persona A: jeune actif urbain", "Persona B: parent établi", "Persona C: senior cultivé"];
-      const randomSeed = seeds[Math.floor(Math.random() * seeds.length)];
+      const { bookTitle, category, targetDescription, chapters: bookChapters } = body as {
+        bookTitle: string; category: string; targetDescription?: string;
+        chapters?: { title: string; content: string }[];
+      };
+
+      const bookDigest = bookChapters && bookChapters.length > 0
+        ? bookChapters.slice(0, 6).map((c, i) => `Ch.${i + 1} "${c.title}": ${(c.content || "").substring(0, 300)}`).join('\n')
+        : "";
 
       const completion = await groq.chat.completions.create({
         model: MODEL,
         messages: [
-          { role: "system", content: "Tu es expert en marketing et segmentation d'audience. Tu réponds UNIQUEMENT avec un tableau JSON valide contenant exactement 3 objets, sans aucun texte avant ou après, sans markdown." },
-          { role: "user", content: `Génère 3 SEGMENTS D'AUDIENCE DISTINCTS et DIFFÉRENTS pour le livre "${bookTitle}" (${category}).
-Cible précisée: ${targetDescription || "non spécifiée"}
-Variation créative: ${randomSeed} — assure-toi que les 3 personas sont vraiment différents (âges, professions, situations de vie différents).
+          {
+            role: "system",
+            content: "Tu es expert en marketing, psychologie du consommateur et segmentation d'audience. Tu reponds UNIQUEMENT avec un tableau JSON valide de 3 objets. Zero texte autour, zero markdown.",
+          },
+          {
+            role: "user",
+            content: `Analyse profonde d'audience pour le livre "${bookTitle}" (${category}).
+Cible precisee: ${targetDescription || "marche francophone general"}
+${bookDigest ? `
+CONTENU DU LIVRE (extrait pour analyse grondee dans le texte reel):
+${bookDigest}` : ""}
 
-Réponds UNIQUEMENT avec ce tableau JSON — rien d'autre:
+Genere 3 PERSONAS RADICALEMENT DIFFERENTS — ages, profils socio-economiques, motivations et rapports au livre vraiment distincts.
+IMPORTANT: chaque champ doit etre specifique a CE livre et CE profil — zero reponse generique.
+
+Reponds UNIQUEMENT avec ce JSON (3 objets complets):
 [
   {
-    "segment": "Segment 1 — [nom du profil]",
-    "prenom": "prénom réaliste",
-    "age": 28,
-    "profession": "profession détaillée",
-    "situation": "vie actuelle en 2 phrases",
-    "probleme_principal": "problème n°1 que ce livre résout pour CE profil",
-    "desirs": ["désir 1", "désir 2", "désir 3"],
-    "peurs": ["peur 1", "peur 2"],
-    "objections_achat": ["objection 1", "objection 2"],
-    "triggers_dachat": ["déclencheur 1", "déclencheur 2"],
-    "plateformes": ["Instagram", "TikTok"],
-    "message_marketing": "la phrase exacte qui fait acheter CE profil",
-    "parcours_client": "comment il découvre et achète le livre"
+    "segment": "Segment 1 — [nom court du profil ex: L'Ambitieux Presse]",
+    "prenom": "prenom realiste africain ou francophone",
+    "age": 27,
+    "genre": "H",
+    "profession": "profession precise avec contexte",
+    "revenu_mensuel": "ex: 350 000 FCFA",
+    "situation": "description de sa vie actuelle en 2-3 phrases concretes et specifiques",
+    "frustration_quotidienne": "ce qui l'enerve ou le bloque tous les jours — tres specifique",
+    "probleme_principal": "le probleme exact que ce livre resout pour LUI",
+    "transformation_esperee": "la transformation precise qu'il espere apres ce livre",
+    "ce_quils_vont_adorer": ["aspect specifique du livre qu'il va adorer", "aspect 2", "aspect 3"],
+    "ce_qui_peut_les_decevoir": ["risque de deception specifique a ce profil et ce livre", "deception potentielle 2"],
+    "desirs_profonds": ["desir profond 1", "desir profond 2", "desir profond 3"],
+    "peurs": ["peur 1 specifique a son profil", "peur 2", "peur 3"],
+    "resistance_profonde": "le vrai frein psychologique qui l'empeche d'acheter — non generique",
+    "objections_achat": ["objection 1 reelle", "objection 2", "objection 3"],
+    "declencheurs_dachat": ["ce qui declenche vraiment l'achat", "declencheur 2"],
+    "moment_dachat_ideal": "le contexte exact ou il achete (ex: apres temoignage, en mode resolution...)",
+    "mots_qui_convertissent": ["mot ou phrase 1", "mot 2", "mot 3", "mot 4"],
+    "mots_a_eviter": ["mot qui le fait fuir", "mot 2"],
+    "angle_marketing_principal": "l'angle #1 le plus puissant — specifique et actionnable",
+    "message_marketing": "la phrase exacte de 1-2 lignes qui fait acheter CE profil",
+    "ton_communication": "ex: direct sans fioriture / emotionnel inspirant / analytique factuel",
+    "canaux_prioritaires": ["canal 1 specifique", "canal 2"],
+    "type_contenu_prefere": ["format contenu 1", "format 2"],
+    "erreurs_marketing_a_eviter": "ce qui le fait fuir ou perdre confiance — specifique",
+    "parcours_client": "comment il decouvre => s'interesse => hesite => achete => recommande"
   },
-  { "segment": "Segment 2 — [nom du profil]", "prenom": "...", "age": 42, ... },
-  { "segment": "Segment 3 — [nom du profil]", "prenom": "...", "age": 58, ... }
-]` },
+  {
+    "segment": "Segment 2 — [profil tres different ex: La Mere Resiliente]",
+    "prenom": "prenom F", "age": 38, "genre": "F", "profession": "...", "revenu_mensuel": "...",
+    "situation": "...", "frustration_quotidienne": "...", "probleme_principal": "...",
+    "transformation_esperee": "...", "ce_quils_vont_adorer": ["...","...","..."],
+    "ce_qui_peut_les_decevoir": ["...","..."], "desirs_profonds": ["...","...","..."],
+    "peurs": ["...","...","..."], "resistance_profonde": "...",
+    "objections_achat": ["...","...","..."], "declencheurs_dachat": ["...","..."],
+    "moment_dachat_ideal": "...", "mots_qui_convertissent": ["...","...","...","..."],
+    "mots_a_eviter": ["...","..."], "angle_marketing_principal": "...",
+    "message_marketing": "...", "ton_communication": "...",
+    "canaux_prioritaires": ["...","..."], "type_contenu_prefere": ["...","..."],
+    "erreurs_marketing_a_eviter": "...", "parcours_client": "..."
+  },
+  {
+    "segment": "Segment 3 — [profil encore different ex: Le Sceptique Cultive]",
+    "prenom": "prenom", "age": 52, "genre": "H", "profession": "...", "revenu_mensuel": "...",
+    "situation": "...", "frustration_quotidienne": "...", "probleme_principal": "...",
+    "transformation_esperee": "...", "ce_quils_vont_adorer": ["...","...","..."],
+    "ce_qui_peut_les_decevoir": ["...","..."], "desirs_profonds": ["...","...","..."],
+    "peurs": ["...","...","..."], "resistance_profonde": "...",
+    "objections_achat": ["...","...","..."], "declencheurs_dachat": ["...","..."],
+    "moment_dachat_ideal": "...", "mots_qui_convertissent": ["...","...","...","..."],
+    "mots_a_eviter": ["...","..."], "angle_marketing_principal": "...",
+    "message_marketing": "...", "ton_communication": "...",
+    "canaux_prioritaires": ["...","..."], "type_contenu_prefere": ["...","..."],
+    "erreurs_marketing_a_eviter": "...", "parcours_client": "..."
+  }
+]`,
+          },
         ],
-        temperature: 0.95,
-        max_tokens: 3000,
+        temperature: 0.92,
+        max_tokens: 4000,
       });
       const raw = completion.choices[0].message.content?.trim() || "[]";
       try {
