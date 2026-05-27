@@ -1,73 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { request as httpsReq } from "https";
 
-export const maxDuration = 60;
-
-// ── Utilitaire HTTP natif (contourne fetch/polyfill Vercel) ───────────────────
-function httpsPost(
-  host: string, path: string,
-  headers: Record<string, string>,
-  body: string,
-  timeoutMs: number
-): Promise<{ status: number; body: Buffer; headers: Record<string, string> }> {
-  return new Promise((resolve, reject) => {
-    const bodyBuf = Buffer.from(body, "utf-8");
-    const req = httpsReq(
-      { hostname: host, path, method: "POST", headers: { ...headers, "Content-Length": bodyBuf.length } },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (c: Buffer) => chunks.push(c));
-        res.on("end", () => resolve({
-          status: res.statusCode ?? 0,
-          body: Buffer.concat(chunks),
-          headers: res.headers as Record<string, string>,
-        }));
-      }
-    );
-    req.setTimeout(timeoutMs, () => { req.destroy(); reject(new Error(`Timeout ${timeoutMs}ms`)); });
-    req.on("error", reject);
-    req.write(bodyBuf);
-    req.end();
-  });
-}
-
-// Lecture SSE (Server-Sent Events) natif pour la queue Gradio
-function httpsGetSSE(
-  host: string, path: string,
-  headers: Record<string, string>,
-  timeoutMs: number
-): Promise<string[]> {
-  return new Promise((resolve, reject) => {
-    const req = httpsReq(
-      { hostname: host, path, method: "GET", headers },
-      (res) => {
-        const events: string[] = [];
-        let buf = "";
-        res.on("data", (c: Buffer) => {
-          buf += c.toString("utf-8");
-          const lines = buf.split("\n");
-          buf = lines.pop() ?? "";
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const payload = line.slice(6).trim();
-              if (payload) events.push(payload);
-              // Arrêt anticipé si le job est terminé
-              try {
-                const ev = JSON.parse(payload) as { msg?: string };
-                if (ev.msg === "process_completed") { req.destroy(); resolve(events); return; }
-              } catch {}
-            }
-          }
-        });
-        res.on("end", () => resolve(events));
-        res.on("error", (e) => { resolve(events.length ? events : []); void e; });
-      }
-    );
-    req.setTimeout(timeoutMs, () => { req.destroy(); resolve([]); });
-    req.on("error", (e) => reject(e));
-    req.end();
-  });
-}
+export const maxDuration = 30;
 
 // ── Prompts cinématiques selon thème / type vidéo ────────────────────────────
 const WAN_PROMPTS: Record<string, Record<string, string>> = {
@@ -85,150 +18,55 @@ function getWanPrompt(theme: string, videoType: string): string {
     ?? "cinematic abstract atmospheric background, smooth motion, high quality, no text, no people";
 }
 
-// ── Tentative 1 : HF Inference Router (text-to-video) ────────────────────────
-async function tryInferenceAPI(prompt: string, hfToken: string): Promise<Buffer | null> {
-  try {
-    const res = await httpsPost(
-      "router.huggingface.co",
-      "/models/Wan-AI/Wan2.1-T2V-1.3B",
-      {
-        Authorization: `Bearer ${hfToken}`,
-        "Content-Type": "application/json",
-        Accept: "video/mp4",
-      },
-      JSON.stringify({ inputs: prompt }),
-      55_000
-    );
-    if (res.status === 200) {
-      // Vérifie que c'est bien une vidéo (pas un JSON d'erreur)
-      const ct = res.headers["content-type"] ?? "";
-      if (ct.includes("video") || ct.includes("octet-stream")) return res.body;
-    }
-    if (res.status === 503) {
-      // Modèle en chargement — réessayer avec wait
-      const res2 = await httpsPost(
-        "router.huggingface.co",
-        "/models/Wan-AI/Wan2.1-T2V-1.3B",
-        {
-          Authorization: `Bearer ${hfToken}`,
-          "Content-Type": "application/json",
-          "x-wait-for-model": "true",
-          Accept: "video/mp4",
-        },
-        JSON.stringify({ inputs: prompt }),
-        55_000
-      );
-      if (res2.status === 200) {
-        const ct2 = res2.headers["content-type"] ?? "";
-        if (ct2.includes("video") || ct2.includes("octet-stream")) return res2.body;
-      }
-    }
-  } catch (e) {
-    console.warn("[wan-video] inference API:", String(e));
-  }
-  return null;
-}
-
-// ── Tentative 2 : HF Spaces Gradio queue + SSE ────────────────────────────────
-const SPACES = [
-  "wan-ai-wan2-1-t2v-1-3b.hf.space",
-  "wan-ai-wan2-point-1-t2v-1-3b.hf.space",
-];
-
-async function tryGradioSpace(prompt: string, hfToken: string): Promise<string | null> {
-  for (const spaceHost of SPACES) {
-    try {
-      const sessionHash = Math.random().toString(36).slice(2, 14);
-
-      // Soumission à la queue Gradio (paramètres minimalistes pour vitesse max)
-      const joinBody = JSON.stringify({
-        data: [
-          prompt,    // prompt
-          "",        // negative prompt
-          49,        // num_frames (court = plus rapide)
-          "480x832", // resolution (portrait)
-          8,         // num_inference_steps
-          5.0,       // guidance_scale
-          42,        // seed
-        ],
-        fn_index: 0,
-        session_hash: sessionHash,
-        trigger_id: 6,
-      });
-
-      const joinRes = await httpsPost(
-        spaceHost, "/queue/join",
-        {
-          "Content-Type": "application/json",
-          ...(hfToken ? { Authorization: `Bearer ${hfToken}` } : {}),
-        },
-        joinBody, 8_000
-      );
-
-      if (joinRes.status !== 200) continue;
-
-      // Écoute SSE jusqu'à process_completed (max 50s)
-      const events = await httpsGetSSE(
-        spaceHost,
-        `/queue/data?session_hash=${sessionHash}`,
-        hfToken ? { Authorization: `Bearer ${hfToken}` } : {},
-        50_000
-      );
-
-      for (const evStr of events) {
-        try {
-          const ev = JSON.parse(evStr) as {
-            msg?: string;
-            output?: { data?: unknown[] };
-          };
-          if (ev.msg === "process_completed" && ev.output?.data?.[0]) {
-            const d = ev.output.data[0] as
-              | { url?: string; video?: { url?: string }; path?: string }
-              | string
-              | null;
-            let url: string | null = null;
-            if (typeof d === "string") url = d;
-            else if (d && typeof d === "object") {
-              url = d.url ?? d.video?.url ?? d.path ?? null;
-            }
-            if (url) {
-              if (url.startsWith("/")) url = `https://${spaceHost}${url}`;
-              return url;
-            }
-          }
-        } catch {}
-      }
-    } catch (e) {
-      console.warn(`[wan-video] space ${spaceHost}:`, String(e));
-    }
-  }
-  return null;
-}
-
-// ── Handler principal ─────────────────────────────────────────────────────────
+// ── Soumission du job à fal.ai (retour immédiat < 2s) ─────────────────────────
 export async function POST(req: NextRequest) {
-  const body = await req.json() as { theme?: string; videoType?: string; customPrompt?: string };
-  const hfToken = process.env.HF_TOKEN || "";
+  const falKey = process.env.FAL_KEY;
+  if (!falKey) {
+    return NextResponse.json(
+      { error: "FAL_KEY manquant — ajoutez-le dans les variables d'environnement Vercel" },
+      { status: 503 }
+    );
+  }
 
+  const body = await req.json() as { theme?: string; videoType?: string; customPrompt?: string };
   const prompt = body.customPrompt || getWanPrompt(body.theme || "dark", body.videoType || "teaser");
 
-  // Tentative 1 : Inference API (renvoie des bytes vidéo)
-  const videoBytes = await tryInferenceAPI(prompt, hfToken);
-  if (videoBytes) {
-    return new NextResponse(videoBytes.buffer as ArrayBuffer, {
+  try {
+    const res = await fetch("https://queue.fal.run/fal-ai/wan/v2.1/t2v-1.3b", {
+      method: "POST",
       headers: {
-        "Content-Type": "video/mp4",
-        "Content-Length": String(videoBytes.byteLength),
-        "X-Wan-Source": "inference-api",
+        "Authorization": `Key ${falKey}`,
+        "Content-Type": "application/json",
       },
+      body: JSON.stringify({
+        prompt,
+        negative_prompt: "text, watermark, logo, blur, distorted, low quality, people, face",
+        num_frames: 49,
+        resolution: "480p",
+        num_inference_steps: 20,
+        guidance_scale: 5.0,
+        seed: Math.floor(Math.random() * 99999),
+      }),
+      signal: AbortSignal.timeout(25_000),
     });
-  }
 
-  // Tentative 2 : Gradio Space (renvoie une URL)
-  const videoUrl = await tryGradioSpace(prompt, hfToken);
-  if (videoUrl) {
-    return NextResponse.json({ url: videoUrl, source: "gradio-space" });
-  }
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("[wan-video] fal.ai submit error:", res.status, errText);
+      return NextResponse.json(
+        { error: `fal.ai erreur ${res.status}`, detail: errText },
+        { status: 502 }
+      );
+    }
 
-  return NextResponse.json({ error: "Wan2.1 indisponible (timeout ou quota)" }, { status: 503 });
+    const data = await res.json() as { request_id?: string; error?: string };
+    if (!data.request_id) {
+      return NextResponse.json({ error: "Pas de request_id dans la réponse fal.ai" }, { status: 502 });
+    }
+
+    return NextResponse.json({ requestId: data.request_id });
+  } catch (e) {
+    console.error("[wan-video] submit exception:", e);
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
 }

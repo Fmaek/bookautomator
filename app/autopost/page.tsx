@@ -222,93 +222,76 @@ function getWan2Prompt(themeId: string) {
   return WAN_CLIENT_PROMPTS[themeId] ?? WAN_CLIENT_PROMPTS.dark;
 }
 
-// ── Wan2.1 via HF Space SSE (navigateur direct, pas de timeout Vercel) ────────
+// ── Wan2.1 via fal.ai (submit + poll) ─────────────────────────────────────────
+// Étape 1 : soumission à /api/wan-video (< 2s, retourne requestId)
+// Étape 2 : polling /api/wan-video/poll toutes les 5s jusqu'à COMPLETED (max 6 min)
 async function fetchWan2Video(
   prompt: string,
   onStage?: (msg: string) => void
 ): Promise<string | null> {
-  // Espaces publics — pas d'authentification requise
-  const SPACES = [
-    "https://wan-ai-wan2-1-t2v-1-3b.hf.space",
-    "https://wan-ai-wan2-point-1-t2v-1-3b.hf.space",
-  ];
+  try {
+    // ── Soumission ─────────────────────────────────────────────────────────────
+    onStage?.("🤖 Wan2.1 — soumission du job à fal.ai…");
+    const submitRes = await fetch("/api/wan-video", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ customPrompt: prompt }),
+      signal: AbortSignal.timeout(30_000),
+    });
 
-  for (const SPACE of SPACES) {
-    try {
-      const sessionHash = Math.random().toString(36).slice(2, 12);
-
-      // Étape 1 : rejoindre la queue Gradio
-      const joinRes = await fetch(`${SPACE}/queue/join`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          data: [
-            prompt,   // prompt
-            "",       // negative prompt
-            49,       // num_frames (court pour rapidité, doit être 4k+1)
-            8,        // num_inference_steps
-            5.0,      // guidance_scale
-            Math.floor(Math.random() * 9999), // seed
-          ],
-          fn_index: 0,
-          session_hash: sessionHash,
-        }),
-        signal: AbortSignal.timeout(12_000),
-      });
-      if (!joinRes.ok) {
-        console.warn(`[Wan2.1] ${SPACE} join: ${joinRes.status}`);
-        continue;
-      }
-
-      onStage?.("🤖 Wan2.1 en file d'attente… (peut prendre 2-5 min)");
-
-      // Étape 2 : écoute SSE — le navigateur attend sans limite de temps
-      const videoUrl = await new Promise<string | null>((resolve) => {
-        const es = new EventSource(`${SPACE}/queue/data?session_hash=${sessionHash}`);
-        const killTimer = setTimeout(() => { es.close(); resolve(null); }, 360_000); // 6 min max
-
-        es.onmessage = (e) => {
-          try {
-            const ev = JSON.parse(e.data) as {
-              msg?: string; queue_size?: number; rank?: number; rank_eta?: number;
-              output?: { data?: unknown[] }; success?: boolean;
-            };
-
-            if (ev.msg === "send_hash" || ev.msg === "estimation") {
-              const eta = ev.rank_eta ? `~${Math.round(ev.rank_eta)}s` : "…";
-              onStage?.(`🤖 Wan2.1 en attente (pos ${(ev.rank ?? 0) + 1}) — ETA ${eta}`);
-            }
-            if (ev.msg === "process_starts") {
-              onStage?.("🤖 Wan2.1 génère la vidéo… (1-3 min)");
-            }
-            if (ev.msg === "process_generating") {
-              onStage?.("🎬 Wan2.1 : rendu en cours…");
-            }
-            if (ev.msg === "process_completed") {
-              clearTimeout(killTimer); es.close();
-              const d = ev.output?.data?.[0] as
-                | { url?: string; video?: { url?: string }; path?: string }
-                | string | null;
-              let url: string | null = null;
-              if (typeof d === "string") url = d;
-              else if (d && typeof d === "object") url = d.url ?? d.video?.url ?? d.path ?? null;
-              if (url && url.startsWith("/")) url = `${SPACE}${url}`;
-              resolve(url ?? null);
-            }
-            if (ev.msg === "queue_full" || ev.success === false) {
-              clearTimeout(killTimer); es.close(); resolve(null);
-            }
-          } catch { /* ignore malformed SSE */ }
-        };
-        es.onerror = () => { clearTimeout(killTimer); es.close(); resolve(null); };
-      });
-
-      if (videoUrl) return videoUrl;
-    } catch (e) {
-      console.warn(`[Wan2.1] ${SPACE} erreur:`, e);
+    const submitData = await submitRes.json() as { requestId?: string; error?: string };
+    if (!submitRes.ok || !submitData.requestId) {
+      console.warn("[Wan2.1] soumission échouée:", submitData.error ?? submitRes.status);
+      return null;
     }
+
+    const requestId = submitData.requestId;
+    onStage?.("⏳ Wan2.1 en file d'attente fal.ai… (2-5 min)");
+    console.log("[Wan2.1] Job soumis, requestId:", requestId);
+
+    // ── Polling toutes les 5 secondes (max 6 min = 72 tentatives) ─────────────
+    const maxAttempts = 72;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise<void>((r) => setTimeout(r, 5_000));
+
+      try {
+        const pollRes = await fetch(
+          `/api/wan-video/poll?requestId=${encodeURIComponent(requestId)}`,
+          { signal: AbortSignal.timeout(15_000) }
+        );
+        const pollData = await pollRes.json() as {
+          status: string; url?: string; error?: string;
+        };
+
+        if (pollData.status === "COMPLETED" && pollData.url) {
+          console.log("[Wan2.1] Vidéo prête:", pollData.url);
+          return pollData.url;
+        }
+
+        if (pollData.status === "FAILED") {
+          console.warn("[Wan2.1] Job échoué:", pollData.error);
+          return null;
+        }
+
+        // IN_QUEUE ou IN_PROGRESS
+        const elapsed = Math.round((attempt + 1) * 5);
+        if (pollData.status === "IN_PROGRESS") {
+          onStage?.(`🎬 Wan2.1 génère la vidéo… (${elapsed}s écoulées)`);
+        } else {
+          onStage?.(`⏳ Wan2.1 en file d'attente fal.ai… (${elapsed}s)`);
+        }
+      } catch (pollErr) {
+        console.warn(`[Wan2.1] Poll attempt ${attempt + 1} erreur:`, pollErr);
+        // Continue polling même si une tentative échoue
+      }
+    }
+
+    console.warn("[Wan2.1] Timeout 6 min dépassé");
+    return null;
+  } catch (e) {
+    console.warn("[Wan2.1] fetchWan2Video erreur:", e);
+    return null;
   }
-  return null;
 }
 
 // ── Renderer principal ────────────────────────────────────────────────────────
