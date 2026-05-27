@@ -62,8 +62,23 @@ async function callQwen(
           lastError = `HF ${res.status}: ${res.body.substring(0, 200)}`;
           break; // modèle suivant
         }
-        const data = JSON.parse(res.body) as { choices: { message: { content: string } }[] };
-        return data.choices[0]?.message?.content ?? "";
+        const data = JSON.parse(res.body) as {
+          choices?: { message: { content: string } }[];
+          error?: string;
+        };
+        // HF Router peut retourner 200 avec un body d'erreur (ex: quota, modèle indispo)
+        if (data.error) {
+          lastError = `HF error: ${data.error.substring(0, 200)}`;
+          console.warn(`[callQwen] ${model}: ${lastError}`);
+          break; // modèle suivant
+        }
+        const content = data.choices?.[0]?.message?.content ?? "";
+        if (!content.trim()) {
+          lastError = `Réponse vide du modèle ${model}`;
+          console.warn(`[callQwen] ${model}: réponse vide`);
+          break; // modèle suivant
+        }
+        return content;
       } catch (e) {
         lastError = String(e);
         console.error(`[callQwen] ${model} attempt ${attempt}:`, lastError);
@@ -245,14 +260,27 @@ export async function POST(req: NextRequest) {
   const triggers = getTriggers(body.category || "");
 
   try {
+    let result: Record<string, unknown>;
     switch (body.type) {
-      case "teaser":      return NextResponse.json(await generateTeaser(hfToken, ctx, triggers));
-      case "citation":    return NextResponse.json(await generateCitation(hfToken, ctx, triggers));
-      case "promo":       return NextResponse.json(await generatePromo(hfToken, ctx, triggers));
-      case "booktrailer": return NextResponse.json(await generateBooktrailer(hfToken, ctx, triggers));
-      case "shorts":      return NextResponse.json(await generateShorts(hfToken, ctx, triggers));
+      case "teaser":      result = await generateTeaser(hfToken, ctx, triggers); break;
+      case "citation":    result = await generateCitation(hfToken, ctx, triggers); break;
+      case "promo":       result = await generatePromo(hfToken, ctx, triggers); break;
+      case "booktrailer": result = await generateBooktrailer(hfToken, ctx, triggers); break;
+      case "shorts":      result = await generateShorts(hfToken, ctx, triggers); break;
       default:            return NextResponse.json({ error: "Type inconnu" }, { status: 400 });
     }
+    // Si le JSON extrait est vide (aucun champ utile) → erreur explicite
+    const hasContent = Object.keys(result).length > 0 && (
+      result.slides || result.scenes || result.variants || result.segments || result.hooks
+    );
+    if (!hasContent) {
+      console.error("[video-script] Résultat vide pour type:", body.type, "result:", JSON.stringify(result).slice(0, 100));
+      return NextResponse.json({
+        error: "Génération Qwen échouée",
+        detail: "Le modèle a retourné une réponse vide ou non-parseable. Réessaie dans quelques secondes.",
+      }, { status: 500 });
+    }
+    return NextResponse.json(result);
   } catch (e) {
     console.error("[video-script/qwen]", e);
     const msg = String(e);
