@@ -209,15 +209,115 @@ async function loadBgVideo(url: string): Promise<HTMLVideoElement | null> {
   });
 }
 
+// ── Prompts Wan2.1 par thème / type ───────────────────────────────────────────
+const WAN_CLIENT_PROMPTS: Record<string, string> = {
+  dark:   "cinematic dark moody atmosphere abstract background, deep shadows, slow motion bokeh lights, no text, no people",
+  gold:   "cinematic golden luxury atmosphere, light rays, sparkling gold bokeh particles, no text, no people",
+  ocean:  "cinematic ocean waves underwater light, blue depth, slow motion water, no text, no people",
+  fire:   "cinematic fire embers dramatic atmosphere, intense glowing flames, slow motion, no text, no people",
+  forest: "cinematic mystical forest light through trees, green bokeh, slow motion nature, no text, no people",
+  rose:   "cinematic romantic soft pink bokeh, gentle light, abstract floral motion, no text, no people",
+};
+function getWan2Prompt(themeId: string) {
+  return WAN_CLIENT_PROMPTS[themeId] ?? WAN_CLIENT_PROMPTS.dark;
+}
+
+// ── Wan2.1 via HF Space SSE (navigateur direct, pas de timeout Vercel) ────────
+async function fetchWan2Video(
+  prompt: string,
+  onStage?: (msg: string) => void
+): Promise<string | null> {
+  // Espaces publics — pas d'authentification requise
+  const SPACES = [
+    "https://wan-ai-wan2-1-t2v-1-3b.hf.space",
+    "https://wan-ai-wan2-point-1-t2v-1-3b.hf.space",
+  ];
+
+  for (const SPACE of SPACES) {
+    try {
+      const sessionHash = Math.random().toString(36).slice(2, 12);
+
+      // Étape 1 : rejoindre la queue Gradio
+      const joinRes = await fetch(`${SPACE}/queue/join`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: [
+            prompt,   // prompt
+            "",       // negative prompt
+            49,       // num_frames (court pour rapidité, doit être 4k+1)
+            8,        // num_inference_steps
+            5.0,      // guidance_scale
+            Math.floor(Math.random() * 9999), // seed
+          ],
+          fn_index: 0,
+          session_hash: sessionHash,
+        }),
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!joinRes.ok) {
+        console.warn(`[Wan2.1] ${SPACE} join: ${joinRes.status}`);
+        continue;
+      }
+
+      onStage?.("🤖 Wan2.1 en file d'attente… (peut prendre 2-5 min)");
+
+      // Étape 2 : écoute SSE — le navigateur attend sans limite de temps
+      const videoUrl = await new Promise<string | null>((resolve) => {
+        const es = new EventSource(`${SPACE}/queue/data?session_hash=${sessionHash}`);
+        const killTimer = setTimeout(() => { es.close(); resolve(null); }, 360_000); // 6 min max
+
+        es.onmessage = (e) => {
+          try {
+            const ev = JSON.parse(e.data) as {
+              msg?: string; queue_size?: number; rank?: number; rank_eta?: number;
+              output?: { data?: unknown[] }; success?: boolean;
+            };
+
+            if (ev.msg === "send_hash" || ev.msg === "estimation") {
+              const eta = ev.rank_eta ? `~${Math.round(ev.rank_eta)}s` : "…";
+              onStage?.(`🤖 Wan2.1 en attente (pos ${(ev.rank ?? 0) + 1}) — ETA ${eta}`);
+            }
+            if (ev.msg === "process_starts") {
+              onStage?.("🤖 Wan2.1 génère la vidéo… (1-3 min)");
+            }
+            if (ev.msg === "process_generating") {
+              onStage?.("🎬 Wan2.1 : rendu en cours…");
+            }
+            if (ev.msg === "process_completed") {
+              clearTimeout(killTimer); es.close();
+              const d = ev.output?.data?.[0] as
+                | { url?: string; video?: { url?: string }; path?: string }
+                | string | null;
+              let url: string | null = null;
+              if (typeof d === "string") url = d;
+              else if (d && typeof d === "object") url = d.url ?? d.video?.url ?? d.path ?? null;
+              if (url && url.startsWith("/")) url = `${SPACE}${url}`;
+              resolve(url ?? null);
+            }
+            if (ev.msg === "queue_full" || ev.success === false) {
+              clearTimeout(killTimer); es.close(); resolve(null);
+            }
+          } catch { /* ignore malformed SSE */ }
+        };
+        es.onerror = () => { clearTimeout(killTimer); es.close(); resolve(null); };
+      });
+
+      if (videoUrl) return videoUrl;
+    } catch (e) {
+      console.warn(`[Wan2.1] ${SPACE} erreur:`, e);
+    }
+  }
+  return null;
+}
+
 // ── Renderer principal ────────────────────────────────────────────────────────
 async function renderVideoToBlob(
   slides: Slide[], fmt: typeof FORMATS[0], thm: typeof THEMES[0],
   coverDataUrl?: string, videoType = "teaser", fps = 30,
-  pexelsKey?: string,
   bookCategory?: string, bookTitle?: string,
   onStage?: (stage: string) => void,
-  visualStyle = "cinema",
-  useWan = false
+  visualStyle = "cinema"
 ): Promise<Blob> {
   const W = fmt.w, H = fmt.h;
   const barH = Math.round(H * 0.075);
@@ -262,45 +362,19 @@ async function renderVideoToBlob(
     }
   } catch (e) { console.warn("MusicGen indisponible, synth ambiant utilisé:", e); }
 
-  // ── Fond Wan2.1 IA ─────────────────────────────────────────────────────────
+  // ── Fond Wan2.1 IA (browser → HF Space SSE, sans limite Vercel) ─────────────
   let bgVideo: HTMLVideoElement | null = null;
-  if (useWan) {
-    onStage?.("🤖 Génération fond IA Wan2.1 (1–3 min)…");
-    try {
-      const wanRes = await fetch("/api/wan-video", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ theme: thm.id, videoType }),
-        signal: AbortSignal.timeout(200_000), // 3 min 20s max côté navigateur
-      });
-      if (wanRes.ok) {
-        const ct = wanRes.headers.get("content-type") ?? "";
-        if (ct.includes("video") || ct.includes("octet-stream")) {
-          // Inference API → bytes directs
-          const blob = await wanRes.blob();
-          bgVideo = await loadBgVideo(URL.createObjectURL(blob));
-        } else {
-          // Gradio Space → URL JSON
-          const data = await wanRes.json() as { url?: string };
-          if (data.url) bgVideo = await loadBgVideo(data.url);
-        }
-      }
-    } catch (e) { console.warn("Wan2.1 indisponible, fond gradient utilisé:", e); }
-    if (!bgVideo) onStage?.("⚠️ Wan2.1 timeout — fond gradient utilisé");
-  }
-
-  // ── Vidéo Pexels en fond (si pas de Wan2.1) ─────────────────────────────────
-  if (!bgVideo && pexelsKey) {
-    onStage?.("🎬 Chargement du fond vidéo cinématique (Pexels)…");
-    try {
-      const pvRes = await fetch("/api/pexels-video", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-pexels-key": pexelsKey },
-        body: JSON.stringify({ category: bookCategory, title: bookTitle }),
-      });
-      const pvData = await pvRes.json() as { url?: string };
-      if (pvData.url) bgVideo = await loadBgVideo(pvData.url);
-    } catch (e) { console.warn("Pexels indisponible:", e); }
+  {
+    const wanPrompt = getWan2Prompt(thm.id);
+    const wanUrl = await fetchWan2Video(wanPrompt, onStage);
+    if (wanUrl) {
+      onStage?.("⏳ Chargement de la vidéo Wan2.1…");
+      bgVideo = await loadBgVideo(wanUrl);
+    }
+    if (!bgVideo) {
+      // Wan2.1 indisponible → fond gradient (dégradé thème)
+      onStage?.("⚠️ Wan2.1 indisponible — fond dégradé utilisé");
+    }
   }
 
   // Stream combiné vidéo + audio
@@ -877,17 +951,15 @@ export default function AutoPostPage() {
     return URL.createObjectURL(videoBlob);
   };
 
-  // ── Génération Canvas (fallback navigateur) ───────────────────────────────
+  // ── Génération Canvas (Wan2.1 IA + texte slides) ─────────────────────────
   const renderVideoCanvas = async (slides: Slide[]) => {
     const total = slides.reduce((s, sl) => s + sl.duration, 0);
     let elapsed = 0;
     const t = setInterval(() => { elapsed += 0.4; setRenderProgress(Math.min(90, Math.round(elapsed / total * 100))); }, 400);
     const blob = await renderVideoToBlob(
       slides, fmt, thm, book?.coverDataUrl, videoType, 30,
-      creds.pexelsKey || undefined,
       book?.category, book?.title, (stage) => setRenderStage(stage),
-      visualStyle,
-      useWan
+      visualStyle
     );
     clearInterval(t);
     return URL.createObjectURL(blob);
@@ -895,17 +967,11 @@ export default function AutoPostPage() {
 
   const renderVideo = async () => {
     if (!script) return;
-    setRendering(true); setRenderProgress(0); setVideoBlobUrl(null); setRenderStage("🎬 Préparation…");
+    setRendering(true); setRenderProgress(0); setVideoBlobUrl(null); setRenderStage("🤖 Connexion Wan2.1…");
     try {
       const slides = buildSlides();
-      let url: string;
-      if (connected) {
-        // Mode HD : serveur Python (imageio + Pillow → vrai MP4)
-        url = await renderVideoHD(slides);
-      } else {
-        // Fallback : Canvas navigateur
-        url = await renderVideoCanvas(slides);
-      }
+      // Toujours Canvas + Wan2.1 (pas de dépendance serveur Python)
+      const url = await renderVideoCanvas(slides);
       setRenderProgress(100);
       setVideoBlobUrl(url);
     } catch (e) {
@@ -1197,31 +1263,14 @@ export default function AutoPostPage() {
               </div>
 
               {/* ── Fond IA ─────────────────────────────────────────────── */}
-              <div className="border border-white/[0.06] rounded-xl p-3 space-y-2">
-                <p className="text-white/40 text-xs font-medium">Fond vidéo</p>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {[
-                    { id: false, label: "Gradient", sub: "Toujours dispo", active: !useWan },
-                    { id: true,  label: "Wan2.1 IA", sub: "IA générative 🤖", active: useWan },
-                  ].map(opt => (
-                    <button key={String(opt.id)}
-                      onClick={() => setUseWan(opt.id as boolean)}
-                      className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg border text-xs transition-all ${opt.active ? "border-violet-500/50 bg-violet-500/10 text-white" : "border-white/[0.05] text-white/40"}`}>
-                      <span className="font-medium">{opt.label}</span>
-                      <span className="text-white/30 text-[10px]">{opt.sub}</span>
-                    </button>
-                  ))}
-                  {creds.pexelsKey && (
-                    <button onClick={() => setUseWan(false)}
-                      className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg border text-xs transition-all ${!useWan && creds.pexelsKey ? "border-blue-500/50 bg-blue-500/10 text-blue-300" : "border-white/[0.05] text-white/40"}`}>
-                      <span className="font-medium">Pexels</span>
-                      <span className="text-white/30 text-[10px]">Stock vidéo</span>
-                    </button>
-                  )}
+              <div className="border border-violet-500/20 bg-violet-500/5 rounded-xl p-3 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🤖</span>
+                  <div>
+                    <p className="text-white/80 text-xs font-semibold">Wan2.1 IA — Fond vidéo généré par IA</p>
+                    <p className="text-violet-400/70 text-[10px]">Appel direct HF Space · Génération 2–5 min · Pas de serveur local requis</p>
+                  </div>
                 </div>
-                {useWan && (
-                  <p className="text-violet-400/70 text-[10px]">🤖 Wan2.1 génère un fond vidéo IA via Vercel — pas de serveur local requis. Génération : 1–3 min.</p>
-                )}
               </div>
             </div>
           </div>
@@ -1382,9 +1431,8 @@ export default function AutoPostPage() {
                       <div className="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 rounded-full transition-all duration-500" style={{ width: `${renderProgress}%` }} />
                     </div>
                     <div className="flex gap-2 flex-wrap">
-                      {creds.pexelsKey && <span className="text-xs px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-lg">🎬 Pexels</span>}
+                      <span className="text-xs px-2 py-0.5 bg-violet-500/20 text-violet-300 rounded-lg">🤖 Wan2.1 IA</span>
                       <span className="text-xs px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded-lg">🎵 MusicGen IA</span>
-                      {!creds.pexelsKey && <span className="text-xs text-white/30">Ajoute Pexels pour des fonds vidéo réels</span>}
                     </div>
                   </div>
                 )}
