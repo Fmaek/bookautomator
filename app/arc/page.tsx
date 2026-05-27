@@ -156,13 +156,15 @@ function ArcChart({ arcs, onHover }: { arcs: ArcEntry[]; onHover: (i: number | n
           return (
             <g key={p.i} style={{ cursor: "pointer" }}
               onMouseEnter={() => onHover(p.i)} onMouseLeave={() => onHover(null)}>
+              {/* Invisible large hit area — prevents flicker at glow edge */}
+              <circle cx={p.x} cy={p.y} r={22} fill="transparent" style={{ pointerEvents: "all" }} />
               {/* Glow */}
-              <circle cx={p.x} cy={p.y} r={8} fill={glow} />
+              <circle cx={p.x} cy={p.y} r={8} fill={glow} style={{ pointerEvents: "none" }} />
               {/* Dot */}
-              <circle cx={p.x} cy={p.y} r={5} fill={col} stroke="#0d0d0f" strokeWidth={1.5} />
+              <circle cx={p.x} cy={p.y} r={5} fill={col} stroke="#0d0d0f" strokeWidth={1.5} style={{ pointerEvents: "none" }} />
               {/* Key moment star */}
               {p.arc.isKeyMoment && (
-                <text x={p.x} y={p.y - 10} textAnchor="middle" fill={col} fontSize={10}>★</text>
+                <text x={p.x} y={p.y - 10} textAnchor="middle" fill={col} fontSize={10} style={{ pointerEvents: "none" }}>★</text>
               )}
             </g>
           );
@@ -187,6 +189,18 @@ export default function ArcPage() {
   const [tab, setTab] = useState<Tab>("graphe");
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [expandedRec, setExpandedRec] = useState<number | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const setHoveredDebounced = (i: number | null) => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    if (i !== null) {
+      // Enter immediately
+      setHoveredIdx(i);
+    } else {
+      // Leave with small delay — absorbs micro-flickers between child elements
+      hoverTimer.current = setTimeout(() => setHoveredIdx(null), 40);
+    }
+  };
 
   useEffect(() => { setBooks(getBooks()); }, []);
   const book = books.find(b => b.id === selectedId);
@@ -349,32 +363,34 @@ export default function ArcPage() {
                         <span className="w-6 h-0.5 bg-white/20 inline-block rounded" /> ligne colorée par émotion
                       </div>
                     </div>
-                    <ArcChart arcs={result.arcs} onHover={setHoveredIdx} />
+                    <ArcChart arcs={result.arcs} onHover={setHoveredDebounced} />
 
-                    {/* Hover tooltip */}
-                    {hoveredArc && (
-                      <div className="mt-3 p-3 rounded-xl border transition-all"
-                        style={{ borderColor: emotionColor(hoveredArc.emotion).hex + "44", backgroundColor: emotionColor(hoveredArc.emotion).hex + "11" }}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-white/40 text-xs">Ch.{hoveredArc.chapter}</span>
-                          <span className="text-white font-semibold text-sm">{hoveredArc.title}</span>
-                          {hoveredArc.isKeyMoment && hoveredArc.keyMomentType && (
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${KEY_MOMENT_STYLES[hoveredArc.keyMomentType]?.bg || ""}`}
-                              style={{ color: KEY_MOMENT_STYLES[hoveredArc.keyMomentType]?.color }}>
-                              ★ {KEY_MOMENT_STYLES[hoveredArc.keyMomentType]?.label}
-                            </span>
-                          )}
+                    {/* Hover tooltip — fixed height reserved to prevent layout shift */}
+                    <div className="mt-3 min-h-[88px]">
+                      {hoveredArc && (
+                        <div className="p-3 rounded-xl border transition-colors"
+                          style={{ borderColor: emotionColor(hoveredArc.emotion).hex + "44", backgroundColor: emotionColor(hoveredArc.emotion).hex + "11" }}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-white/40 text-xs">Ch.{hoveredArc.chapter}</span>
+                            <span className="text-white font-semibold text-sm">{hoveredArc.title}</span>
+                            {hoveredArc.isKeyMoment && hoveredArc.keyMomentType && (
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${KEY_MOMENT_STYLES[hoveredArc.keyMomentType]?.bg || ""}`}
+                                style={{ color: KEY_MOMENT_STYLES[hoveredArc.keyMomentType]?.color }}>
+                                ★ {KEY_MOMENT_STYLES[hoveredArc.keyMomentType]?.label}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <EmotionBadge emotion={hoveredArc.emotion} />
+                            {hoveredArc.subEmotion && (
+                              <><span className="text-white/20 text-xs">+</span><EmotionBadge emotion={hoveredArc.subEmotion} small /></>
+                            )}
+                            <span className="text-white/50 text-xs ml-auto font-mono">{hoveredArc.intensity}/100</span>
+                          </div>
+                          <p className="text-white/55 text-xs mt-2 leading-relaxed">{hoveredArc.note}</p>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <EmotionBadge emotion={hoveredArc.emotion} />
-                          {hoveredArc.subEmotion && (
-                            <><span className="text-white/20 text-xs">+</span><EmotionBadge emotion={hoveredArc.subEmotion} small /></>
-                          )}
-                          <span className="text-white/50 text-xs ml-auto font-mono">{hoveredArc.intensity}/100</span>
-                        </div>
-                        <p className="text-white/55 text-xs mt-2 leading-relaxed">{hoveredArc.note}</p>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
 
                   {/* Global note */}
@@ -395,7 +411,7 @@ export default function ArcPage() {
                         const km = arc.keyMomentType && KEY_MOMENT_STYLES[arc.keyMomentType];
                         return (
                           <div key={i}
-                            onMouseEnter={() => setHoveredIdx(i)} onMouseLeave={() => setHoveredIdx(null)}
+                            onMouseEnter={() => setHoveredDebounced(i)} onMouseLeave={() => setHoveredDebounced(null)}
                             className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-default border ${isHovered ? "bg-white/5 border-white/10" : "bg-white/[0.015] border-transparent"}`}>
                             <span className="text-white/25 text-xs w-5 shrink-0 text-right">{i + 1}</span>
                             {/* Intensity bar */}
@@ -462,7 +478,7 @@ export default function ArcPage() {
                   {/* Visual arc pattern */}
                   <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4">
                     <h3 className="text-white/60 text-xs font-semibold uppercase tracking-wide mb-4">Visualisation de l&apos;arc</h3>
-                    <ArcChart arcs={result.arcs} onHover={setHoveredIdx} />
+                    <ArcChart arcs={result.arcs} onHover={setHoveredDebounced} />
                   </div>
                 </div>
               )}
@@ -599,7 +615,7 @@ export default function ArcPage() {
                   {/* Chart context */}
                   <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4">
                     <p className="text-white/35 text-xs mb-3">Retournements sur le graphe (étoiles ★)</p>
-                    <ArcChart arcs={result.arcs} onHover={setHoveredIdx} />
+                    <ArcChart arcs={result.arcs} onHover={setHoveredDebounced} />
                   </div>
                 </div>
               )}
