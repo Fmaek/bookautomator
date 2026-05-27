@@ -403,6 +403,19 @@ Stade de développement précis concerné (0-3 mois, 6-12 mois, etc.). Activité
 Intelligence émotionnelle chez l'enfant : reconnaître, nommer, gérer ses émotions. Histoire courte illustrant la valeur du chapitre (empathie, courage, honnêteté...). Activité parent-enfant pour ancrer la valeur. Dialogue modèle à reproduire. Ton doux et coloré, adapté à être lu avec l'enfant.`,
       };
 
+      // Shared context (needed by fusion dispatch and base prompts)
+      const themeContext = [
+        chDesc ? `DESCRIPTION DU LIVRE: ${chDesc}` : "",
+        chThemes ? `THÈMES PRINCIPAUX À RESPECTER: ${chThemes}` : "",
+        chSavedStyle ? `STYLE PERSONNEL DE L'AUTEUR (reproduire fidèlement):\n${chSavedStyle}` : "",
+        styleBrief ? `BRIEF D'ÉCRITURE DE L'AUTEUR (respecter absolument):\n${styleBrief}` : "",
+      ].filter(Boolean).join("\n");
+
+      const noMarkdownReminder = `
+
+RÈGLES ABSOLUES — NE JAMAIS ENFREINDRE:
+Aucun astérisque (*gras* ou **titre**). Aucun dièse (# ou ##). Aucun tiret de liste (- item). Aucun sous-titre visible dans le texte. Prose continue uniquement, paragraphes naturels, exactement comme un livre publié chez un grand éditeur.`;
+
       // Multi-style fusion system
       const matchingGuides = categorySubStyleArr.filter(s => categorySubStyleGuides[s]).map(s => categorySubStyleGuides[s]);
       if (matchingGuides.length > 0) {
@@ -462,20 +475,6 @@ Utilise des images fortes, un vocabulaire puissant et Ã©motionnel. Fais ressen
 Construis vers un moment de vÃ©ritÃ©, une prise de conscience intense.
 Langue tendue, rythme haletant, prose dramatique continue.`,
       };
-
-            // Contexte du livre injecté dans chaque chapitre pour préserver les thèmes
-      const description = chDesc; const themes = chThemes; const savedStyleDescription = chSavedStyle;
-      const themeContext = [
-        description ? `DESCRIPTION DU LIVRE: ${description}` : "",
-        themes      ? `THÈMES PRINCIPAUX À RESPECTER: ${themes}` : "",
-        savedStyleDescription ? `STYLE PERSONNEL DE L'AUTEUR (reproduire fidèlement):\n${savedStyleDescription}` : "",
-        styleBrief ? `BRIEF D'ÉCRITURE DE L'AUTEUR (respecter absolument):\n${styleBrief}` : "",
-      ].filter(Boolean).join("\n");
-
-      const noMarkdownReminder = `
-
-RÈGLES ABSOLUES — NE JAMAIS ENFREINDRE:
-Aucun astérisque (*gras* ou **titre**). Aucun dièse (# ou ##). Aucun tiret de liste (- item). Aucun sous-titre visible dans le texte. Prose continue uniquement, paragraphes naturels, exactement comme un livre publié chez un grand éditeur.`;
 
       const basePrompt = stylePrompts[style] || `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}".
 

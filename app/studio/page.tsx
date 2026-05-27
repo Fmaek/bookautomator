@@ -983,7 +983,6 @@ function StudioContent() {
                     className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none placeholder-white/20 resize-none"
                   />
                 </div>
-              </div>
                 {savedStyles.length > 0 && (
                   <div className="mt-3">
                     <label className="text-white/40 text-xs mb-1.5 flex items-center gap-1.5 block">
