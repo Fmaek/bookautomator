@@ -222,74 +222,43 @@ function getWan2Prompt(themeId: string) {
   return WAN_CLIENT_PROMPTS[themeId] ?? WAN_CLIENT_PROMPTS.dark;
 }
 
-// ── Wan2.1 via fal.ai (submit + poll) ─────────────────────────────────────────
-// Étape 1 : soumission à /api/wan-video (< 2s, retourne requestId)
-// Étape 2 : polling /api/wan-video/poll toutes les 5s jusqu'à COMPLETED (max 6 min)
+// ── Fond cinématique IA via HuggingFace FLUX.1-schnell ────────────────────────
+// POST /api/wan-video → génère une image FLUX, retourne base64
+// Ken Burns (zoom lent + dérive) appliqué côté Canvas = effet vidéo parfait
 async function fetchWan2Video(
   prompt: string,
   onStage?: (msg: string) => void
 ): Promise<string | null> {
   try {
-    // ── Soumission ─────────────────────────────────────────────────────────────
-    onStage?.("🤖 Wan2.1 — soumission du job à fal.ai…");
-    const submitRes = await fetch("/api/wan-video", {
+    onStage?.("🎨 Génération du fond IA (FLUX.1)…");
+    const res = await fetch("/api/wan-video", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ customPrompt: prompt }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(55_000),
     });
 
-    const submitData = await submitRes.json() as { requestId?: string; error?: string };
-    if (!submitRes.ok || !submitData.requestId) {
-      console.warn("[Wan2.1] soumission échouée:", submitData.error ?? submitRes.status);
+    if (!res.ok) {
+      console.warn("[BgFlux] API error:", res.status);
       return null;
     }
 
-    const requestId = submitData.requestId;
-    onStage?.("⏳ Wan2.1 en file d'attente fal.ai… (2-5 min)");
-    console.log("[Wan2.1] Job soumis, requestId:", requestId);
-
-    // ── Polling toutes les 5 secondes (max 6 min = 72 tentatives) ─────────────
-    const maxAttempts = 72;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      await new Promise<void>((r) => setTimeout(r, 5_000));
-
-      try {
-        const pollRes = await fetch(
-          `/api/wan-video/poll?requestId=${encodeURIComponent(requestId)}`,
-          { signal: AbortSignal.timeout(15_000) }
-        );
-        const pollData = await pollRes.json() as {
-          status: string; url?: string; error?: string;
-        };
-
-        if (pollData.status === "COMPLETED" && pollData.url) {
-          console.log("[Wan2.1] Vidéo prête:", pollData.url);
-          return pollData.url;
-        }
-
-        if (pollData.status === "FAILED") {
-          console.warn("[Wan2.1] Job échoué:", pollData.error);
-          return null;
-        }
-
-        // IN_QUEUE ou IN_PROGRESS
-        const elapsed = Math.round((attempt + 1) * 5);
-        if (pollData.status === "IN_PROGRESS") {
-          onStage?.(`🎬 Wan2.1 génère la vidéo… (${elapsed}s écoulées)`);
-        } else {
-          onStage?.(`⏳ Wan2.1 en file d'attente fal.ai… (${elapsed}s)`);
-        }
-      } catch (pollErr) {
-        console.warn(`[Wan2.1] Poll attempt ${attempt + 1} erreur:`, pollErr);
-        // Continue polling même si une tentative échoue
-      }
+    const data = await res.json() as { imageBase64?: string; contentType?: string; error?: string };
+    if (!data.imageBase64) {
+      console.warn("[BgFlux] pas d'image:", data.error);
+      return null;
     }
 
-    console.warn("[Wan2.1] Timeout 6 min dépassé");
-    return null;
+    // Convertir base64 → Blob → Object URL
+    const raw = atob(data.imageBase64);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    const blob = new Blob([bytes], { type: data.contentType || "image/jpeg" });
+    const url = URL.createObjectURL(blob);
+    console.log("[BgFlux] ✅ image prête", blob.size, "bytes");
+    return url;
   } catch (e) {
-    console.warn("[Wan2.1] fetchWan2Video erreur:", e);
+    console.warn("[BgFlux] erreur:", e);
     return null;
   }
 }
@@ -345,18 +314,26 @@ async function renderVideoToBlob(
     }
   } catch (e) { console.warn("MusicGen indisponible, synth ambiant utilisé:", e); }
 
-  // ── Fond Wan2.1 IA (browser → HF Space SSE, sans limite Vercel) ─────────────
-  let bgVideo: HTMLVideoElement | null = null;
+  // ── Fond cinématique IA (FLUX.1-schnell → image → Ken Burns Canvas) ──────────
+  let bgImage: HTMLImageElement | null = null;
+  let bgImageUrl: string | null = null;
   {
-    const wanPrompt = getWan2Prompt(thm.id);
-    const wanUrl = await fetchWan2Video(wanPrompt, onStage);
-    if (wanUrl) {
-      onStage?.("⏳ Chargement de la vidéo Wan2.1…");
-      bgVideo = await loadBgVideo(wanUrl);
+    const imagePrompt = getWan2Prompt(thm.id);
+    bgImageUrl = await fetchWan2Video(imagePrompt, onStage);
+    if (bgImageUrl) {
+      onStage?.("🖼️ Chargement du fond IA…");
+      bgImage = await new Promise<HTMLImageElement | null>(resolve => {
+        const img = new window.Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = bgImageUrl!;
+        setTimeout(() => resolve(null), 10_000);
+      });
     }
-    if (!bgVideo) {
-      // Wan2.1 indisponible → fond gradient (dégradé thème)
-      onStage?.("⚠️ Wan2.1 indisponible — fond dégradé utilisé");
+    if (!bgImage) {
+      // FLUX indisponible → fond gradient animé (dégradé thème)
+      onStage?.("🎨 Fond dégradé cinématique");
     }
   }
 
@@ -398,14 +375,21 @@ async function renderVideoToBlob(
       // STYLE A — CINÉMA NOIR
       // ════════════════════════════════════════════════════════════════════
       if (visualStyle === "cinema") {
-        if (bgVideo && bgVideo.readyState >= 2) {
-          const vw = bgVideo.videoWidth || W, vh = bgVideo.videoHeight || H;
-          const scale = Math.max(W/vw, H/vh);
-          const dw = vw*scale, dh = vh*scale;
-          ctx.drawImage(bgVideo, (W-dw)/2, (H-dh)/2, dw, dh);
-          const ov = ctx.createLinearGradient(0,0,W*0.6,H);
-          ov.addColorStop(0, thm.bg1+"99"); ov.addColorStop(1, thm.bg2+"bb");
-          ctx.fillStyle = ov; ctx.fillRect(0,0,W,H);
+        if (bgImage) {
+          // ── Ken Burns cinématique : zoom lent + dérive douce ─────────────
+          const t01 = gFrame / Math.max(1, totalFrames);
+          const kenZoom = 1.0 + t01 * 0.10;                          // zoom 0→10%
+          const panX = Math.sin(t01 * Math.PI * 0.8) * W * 0.025;   // dérive horizontale
+          const panY = (1.0 - t01) * H * 0.030;                      // descente légère
+          const iw = bgImage.naturalWidth  || W;
+          const ih = bgImage.naturalHeight || H;
+          const baseScale = Math.max(W / iw, H / ih) * kenZoom;
+          const dw = iw * baseScale, dh = ih * baseScale;
+          ctx.drawImage(bgImage, (W - dw) / 2 + panX, (H - dh) / 2 + panY, dw, dh);
+          // Overlay coloré thème (semi-transparent pour garder les couleurs de l'image)
+          const ov = ctx.createLinearGradient(0, 0, W * 0.6, H);
+          ov.addColorStop(0, thm.bg1 + "88"); ov.addColorStop(1, thm.bg2 + "aa");
+          ctx.fillStyle = ov; ctx.fillRect(0, 0, W, H);
         } else {
           const t01 = gFrame / Math.max(1, totalFrames);
           const bg = ctx.createLinearGradient(0,0,W,H);
@@ -643,7 +627,7 @@ async function renderVideoToBlob(
 
   await new Promise<void>(r => { rec.onstop = () => r(); rec.stop(); });
   try { await audioCtx.close(); } catch { /* ignore */ }
-  try { bgVideo?.pause(); } catch { /* ignore */ }
+  if (bgImageUrl) { try { URL.revokeObjectURL(bgImageUrl); } catch { /* ignore */ } }
   onStage?.("✅ Vidéo prête !");
   return new Blob(chunks, { type: mime });
 }
@@ -808,21 +792,28 @@ export default function AutoPostPage() {
 
   // ── Video ─────────────────────────────────────────────────────────────────────
   const generateScript = async () => {
-    if (!book) return;
     setGenerating(true); setScript(null); setVideoBlobUrl(null); setScriptError(null); setActiveVariant(0);
+    // Livre optionnel — fallback sur un sujet universel si aucun livre sélectionné
+    const bookTitle   = book?.title      || "L'Art de Réussir sa Vie";
+    const bookCat     = book?.category   || "Développement Personnel";
+    const bookDesc    = (book as unknown as Record<string, unknown>)?.description as string | undefined;
+    const bookAud     = (book as unknown as Record<string, unknown>)?.targetAudience as string | undefined;
+    const bookThemes  = (book as unknown as Record<string, unknown>)?.themes as string | undefined;
+    const bookPrice   = (book as unknown as Record<string, unknown>)?.price as number | undefined;
+    const bookChaps   = book?.chapters;
     try {
       const res = await fetch("/api/video-script", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: videoType,
-          bookTitle: book.title,
-          category: book.category,
-          description: (book as unknown as Record<string, unknown>).description as string | undefined,
-          targetAudience: (book as unknown as Record<string, unknown>).targetAudience as string | undefined,
-          themes: (book as unknown as Record<string, unknown>).themes as string | undefined,
-          price: (book as unknown as Record<string, unknown>).price as number | undefined,
-          chapters: book.chapters,
+          bookTitle,
+          category: bookCat,
+          description: bookDesc,
+          targetAudience: bookAud,
+          themes: bookThemes,
+          price: bookPrice,
+          chapters: bookChaps,
         }),
         signal: AbortSignal.timeout(90_000),
       });
@@ -950,7 +941,7 @@ export default function AutoPostPage() {
 
   const renderVideo = async () => {
     if (!script) return;
-    setRendering(true); setRenderProgress(0); setVideoBlobUrl(null); setRenderStage("🤖 Connexion Wan2.1…");
+    setRendering(true); setRenderProgress(0); setVideoBlobUrl(null); setRenderStage("🎨 Génération fond IA (FLUX)…");
     try {
       const slides = buildSlides();
       // Toujours Canvas + Wan2.1 (pas de dépendance serveur Python)
@@ -1250,8 +1241,8 @@ export default function AutoPostPage() {
                 <div className="flex items-center gap-2">
                   <span className="text-base">🤖</span>
                   <div>
-                    <p className="text-white/80 text-xs font-semibold">Wan2.1 IA — Fond vidéo généré par IA</p>
-                    <p className="text-violet-400/70 text-[10px]">Appel direct HF Space · Génération 2–5 min · Pas de serveur local requis</p>
+                    <p className="text-white/80 text-xs font-semibold">FLUX.1 IA — Fond cinématique généré par IA</p>
+                    <p className="text-violet-400/70 text-[10px]">HuggingFace FLUX.1-schnell · Ken Burns · ~5s · Pas de serveur local requis</p>
                   </div>
                 </div>
               </div>
@@ -1259,13 +1250,13 @@ export default function AutoPostPage() {
           </div>
 
           <div className="space-y-4">
-            <button onClick={generateScript} disabled={generating || !book}
+            <button onClick={generateScript} disabled={generating}
               className="w-full flex items-center justify-center gap-2 py-3.5 bg-gradient-to-r from-violet-500 to-pink-500 hover:from-violet-600 hover:to-pink-600 disabled:opacity-40 text-white rounded-2xl font-semibold transition-all">
               {generating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
               {generating ? "Génération du script IA…" : "Générer le script IA"}
             </button>
             {!book && (
-              <p className="text-center text-white/30 text-xs">Sélectionne un livre dans le panneau gauche</p>
+              <p className="text-center text-white/30 text-xs">Sans livre sélectionné : sujet générique utilisé</p>
             )}
             {scriptError && (
               <div className="bg-red-500/10 border border-red-500/25 rounded-2xl p-4">
@@ -1414,7 +1405,7 @@ export default function AutoPostPage() {
                       <div className="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 rounded-full transition-all duration-500" style={{ width: `${renderProgress}%` }} />
                     </div>
                     <div className="flex gap-2 flex-wrap">
-                      <span className="text-xs px-2 py-0.5 bg-violet-500/20 text-violet-300 rounded-lg">🤖 Wan2.1 IA</span>
+                      <span className="text-xs px-2 py-0.5 bg-violet-500/20 text-violet-300 rounded-lg">🎨 FLUX.1 IA</span>
                       <span className="text-xs px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded-lg">🎵 MusicGen IA</span>
                     </div>
                   </div>
