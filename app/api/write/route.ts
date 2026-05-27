@@ -106,7 +106,11 @@ RÈGLES:
 - Finance/Investissement: chiffres concrets, étapes reproductibles, erreurs à éviter, stratégies claires
 - Poésie: titres poétiques évocateurs, variété émotionnelle et thématique forte
 - Enfant: aventures simples, leçons de vie implicites, personnages attachants
+- Cuisine: chapitres = recettes ou techniques, progression du simple au complexe, variété des plats
+- Technologie: titres concrets et actionnables, progression logique, cas d'usage pratiques
+- Développement enfants: chapitres par compétence ou étape de développement, conseils parents concrets
 - Si le brief décrit un roman ou personnages, adapte en conséquence
+${body.categoryFocus ? `- FOCUS DEMANDÉ PAR L'AUTEUR: ${body.categoryFocus}` : ""}
 Réponds UNIQUEMENT avec ce JSON: {"chapters": ["Titre 1", "Titre 2", ...]}` },
         ],
         temperature: 0.8, max_tokens: 1024,
@@ -286,7 +290,7 @@ Langue tendue, rythme haletant, prose dramatique continue.`,
       };
 
             // Contexte du livre injecté dans chaque chapitre pour préserver les thèmes
-      const { description, themes, savedStyleDescription } = body;
+      const { description, themes, savedStyleDescription, categoryFocus } = body;
       const themeContext = [
         description ? `DESCRIPTION DU LIVRE: ${description}` : "",
         themes      ? `THÈMES PRINCIPAUX À RESPECTER: ${themes}` : "",
@@ -318,8 +322,15 @@ Prose fluide, paragraphes de 3-5 lignes, rythme naturel. Longueur adaptée au co
         else if (category.includes("piritual"))
           categoryGuide = "\n\nGUIDE SPIRITUALITE: Profondeur existentielle, symboles et metaphores puissants. Question ou pratique meditative en cloture.";
         else if (category.includes("inance") || category.includes("nvestiss"))
-          categoryGuide = "\n\nGUIDE FINANCE: Concret et chiffre. Calculs simples, exemples reels, erreurs communes a eviter. Strategie reproductible etape par etape.";
+          categoryGuide = "\n\nGUIDE FINANCE: Concret et chiffre. Calculs reels, exemples pratiques, erreurs courantes a eviter. Strategie reproductible etape par etape.";
+        else if (category.includes("uisine"))
+          categoryGuide = "\n\nGUIDE CUISINE: Recette ou technique avec etapes precises et temps. Ingredients accessibles localement. Astuces de chef, variantes possibles. Niveau de difficulte clairement indique.";
+        else if (category.includes("echnolog"))
+          categoryGuide = "\n\nGUIDE TECHNOLOGIE: Concept explique avec analogie simple. Exemple concret ou cas d'usage reel. Code snippet si pertinent. Vulgarise sans simplifier a l'exces.";
+        else if (category.includes("veloppement") && category.includes("nfant"))
+          categoryGuide = "\n\nGUIDE DEVELOPPEMENT ENFANTS: Stade de developpement concerne clairement identifie. Conseils pratiques et bienveillants pour les parents. Activite ou exercice parent-enfant applicable immediatement.";
       }
+      if (categoryFocus) categoryGuide += `\n\nFOCUS SPECIFIQUE: ${categoryFocus}`;
       const chapterPrompt = basePrompt + (themeContext ? `\n\n${themeContext}` : "") + categoryGuide + noMarkdownReminder;
 
       const completion = await groq.chat.completions.create({
@@ -356,6 +367,29 @@ Prose fluide, paragraphes de 3-5 lignes, rythme naturel. Longueur adaptée au co
         description || themes ? `THÈME ET CONTEXTE DU LIVRE: ${description || themes}` : "",
         savedStyleDescription ? `STYLE PERSONNEL DE L'AUTEUR (reproduire fidèlement):\n${savedStyleDescription}` : "",
       ].filter(Boolean).join("\n\n");
+
+      // Category-specific guide synchronized with chapter action
+      const { categoryFocus: regenCatFocus } = body;
+      let regenCategoryGuide = "";
+      if (category) {
+        if (category.includes("Business") || category.includes("Entrepren"))
+          regenCategoryGuide = "\n\nGUIDE BUSINESS: Strategie actionnable, exemples reels d'entrepreneurs, recapitulatif de l'action cle.";
+        else if (category.includes("veloppement") && !category.includes("nfant"))
+          regenCategoryGuide = "\n\nGUIDE DEVELOPPEMENT PERSONNEL: Transformation (avant/apres). Histoire vraie d'identification. Prise de conscience + etape concrete.";
+        else if ((category.includes("ant") || category.includes("Bien")) && !category.includes("nfant"))
+          regenCategoryGuide = "\n\nGUIDE SANTE: Conseils pratiques fondes sur des faits. Protocole ou habitude applicable immediatement.";
+        else if (category.includes("piritual"))
+          regenCategoryGuide = "\n\nGUIDE SPIRITUALITE: Profondeur existentielle, symboles puissants. Question ou pratique meditative en cloture.";
+        else if (category.includes("inance") || category.includes("nvestiss"))
+          regenCategoryGuide = "\n\nGUIDE FINANCE: Concret et chiffre. Calculs simples, strategie reproductible etape par etape.";
+        else if (category.includes("uisine"))
+          regenCategoryGuide = "\n\nGUIDE CUISINE: Recette ou technique avec etapes precises. Astuces de chef, ingredients accessibles.";
+        else if (category.includes("echnolog"))
+          regenCategoryGuide = "\n\nGUIDE TECHNOLOGIE: Concept clair avec analogie. Exemple concret ou cas d'usage reel.";
+        else if (category.includes("veloppement") && category.includes("nfant"))
+          regenCategoryGuide = "\n\nGUIDE DEVELOPPEMENT ENFANTS: Stade de developpement. Activite parent-enfant pratique.";
+      }
+      if (regenCatFocus) regenCategoryGuide += `\n\nFOCUS SPECIFIQUE: ${regenCatFocus}`;
 
       if (isNovel && novelBible) {
         const novelStyleMap: Record<string, string> = {
@@ -416,7 +450,7 @@ ${contextBlock ? `\n${contextBlock}` : ""}
 
 Prose fluide et naturelle. Respecte la continuité avec les chapitres adjacents.
 CRUCIAL: Cette version doit être RADICALEMENT DIFFÉRENTE — nouvelle accroche, nouveaux exemples concrets, angle d'attaque inédit, histoire d'ouverture différente. Le lecteur ne doit jamais avoir l'impression de relire la même chose.
-Aucun astérisque, aucun sous-titre, aucune liste.` },
+Aucun astérisque, aucun sous-titre, aucune liste.${regenCategoryGuide ? `\n\n${regenCategoryGuide}` : ""}` },
         ],
         temperature: 0.88, max_tokens: 2800,
       });

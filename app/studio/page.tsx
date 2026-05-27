@@ -181,6 +181,7 @@ function StudioContent() {
   useEffect(() => { setSavedStyles(getSavedStyles()); }, []);
 
   const selectedStyleDescription = savedStyles.find(s => s.id === selectedStyleId)?.styleDescription || "";
+  const [categoryFocus, setCategoryFocus] = useState("");
 
   const isPoem = category.includes("Poési");
   const isKids = category.includes("enfant") || category.includes("coloriage");
@@ -210,7 +211,7 @@ function StudioContent() {
     setGenerating(true);
     setStep("plan");
     try {
-      const payload: Record<string, unknown> = { action: "plan", title, category, description, mode };
+      const payload: Record<string, unknown> = { action: "plan", title, category, description, mode, categoryFocus };
       if (isNovel) {
         payload.novelCharacters = novelCharacters;
         payload.novelTwists = novelTwists.filter(t => t.trim());
@@ -245,7 +246,7 @@ function StudioContent() {
       updated[i] = { ...updated[i], status: "writing" };
       setChapters([...updated]);
       try {
-        const chPayload: Record<string, unknown> = { action: "chapter", title, chapterTitle: chapters[i].title, chapterIndex: i + 1, totalChapters: chapters.length, category, style: writingStyle, description: bookDescription, themes: bookDescription, savedStyleDescription: selectedStyleDescription };
+        const chPayload: Record<string, unknown> = { action: "chapter", title, chapterTitle: chapters[i].title, chapterIndex: i + 1, totalChapters: chapters.length, category, style: writingStyle, description: bookDescription, themes: bookDescription, savedStyleDescription: selectedStyleDescription, categoryFocus };
         if (isNovel) {
           chPayload.novelBible = novelBible;
           chPayload.novelGenre = novelGenre;
@@ -319,6 +320,7 @@ function StudioContent() {
         allChapterTitles: chapters.map(c => c.title),
         prevChapterContent: idx > 0 ? chapters[idx - 1].content.slice(0, 600) : "",
         nextChapterContent: idx < chapters.length - 1 ? chapters[idx + 1].content.slice(0, 400) : "",
+        categoryFocus,
       };
       if (isNovel) {
         regenPayload.novelBible = novelBible;
@@ -972,6 +974,58 @@ function StudioContent() {
               {isColoring && <div className="p-3 bg-pink-500/10 border border-pink-500/20 rounded-xl"><p className="text-pink-300 text-sm">🖍️ Mode Livre de coloriage — Descriptions de scènes à colorier, instructions simples pour enfants. Imprime et distribue !</p></div>}
               {isRiddle && !isColoring && <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl"><p className="text-amber-300 text-sm">🧩 Mode Énigmes — L&apos;IA génère des devinettes, puzzles et charades avec leurs réponses.</p></div>}
               {isKids && !isColoring && !isRiddle && <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl"><p className="text-blue-300 text-sm">👶 Mode Livre enfant — Langage ultra simple, phrases courtes, histoires colorées pour 3-8 ans.</p></div>}
+
+              {/* ── Focus spécifique par catégorie ── */}
+              {category && !isNovel && !isPoem && !isKids && !isColoring && !isRiddle && (
+                <div className="space-y-3 p-4 bg-white/[0.02] border border-white/[0.06] rounded-2xl">
+                  <p className="text-white/50 text-xs font-semibold uppercase tracking-wider">
+                    {category.includes("Business") || category.includes("Entrepren") ? "💼 Configuration Business" :
+                     category.includes("inance") || category.includes("nvestiss") ? "💰 Configuration Finance" :
+                     category.includes("ant") && !category.includes("enfant") ? "🌿 Configuration Santé" :
+                     category.includes("piritual") ? "✨ Configuration Spiritualité" :
+                     category.includes("uisine") ? "🍳 Configuration Cuisine" :
+                     category.includes("echnolog") ? "💻 Configuration Technologie" :
+                     category.includes("veloppement") ? "🧠 Configuration Développement" :
+                     "📖 Précisions"}
+                  </p>
+                  <div>
+                    <label className="text-white/50 text-xs mb-1.5 block">
+                      {category.includes("Business") || category.includes("Entrepren") ? "Audience cible & secteur" :
+                       category.includes("inance") || category.includes("nvestiss") ? "Niveau & type d’investissement" :
+                       category.includes("ant") && !category.includes("enfant") ? "Spécialité & public visé" :
+                       category.includes("piritual") ? "Tradition & approche" :
+                       category.includes("uisine") ? "Type de cuisine & régime" :
+                       category.includes("echnolog") ? "Domaine technique & niveau" :
+                       category.includes("veloppement") && category.includes("enfant") ? "Tranche d’âge & thème éducatif" :
+                       category.includes("veloppement") ? "Problème central & transformation visée" :
+                       "Détails supplémentaires"}
+                    </label>
+                    <input
+                      value={categoryFocus}
+                      onChange={e => setCategoryFocus(e.target.value)}
+                      placeholder={
+                        category.includes("Business") || category.includes("Entrepren")
+                          ? "Ex: Entrepreneurs africains, secteur e-commerce, monétisation digitale..."
+                        : category.includes("inance") || category.includes("nvestiss")
+                          ? "Ex: Débutant, bourse africaine, budget 100$/mois, 0 risque..."
+                        : category.includes("ant") && !category.includes("enfant")
+                          ? "Ex: Nutrition, femmes 30-50 ans, perte de poids naturelle..."
+                        : category.includes("piritual")
+                          ? "Ex: Méditation zen, pratique quotidienne, débutants..."
+                        : category.includes("uisine")
+                          ? "Ex: Cuisine camerounaise, végétarien, niveau intermédiaire..."
+                        : category.includes("echnolog")
+                          ? "Ex: React.js, développeurs juniors, projets pratiques..."
+                        : category.includes("veloppement") && category.includes("enfant")
+                          ? "Ex: 4-7 ans, autonomie, activités Montessori..."
+                        : "Ex: Contexte spécifique, audience précise, angle particulier..."
+                      }
+                      className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none placeholder-white/20"
+                    />
+                    <p className="text-white/30 text-xs mt-1">Ce contexte sera injecté dans chaque chapitre généré et régénéré</p>
+                  </div>
+                </div>
+              )}
 
               {/* ── ROMAN / FICTION — config dédiée ── */}
               {isNovel && (
