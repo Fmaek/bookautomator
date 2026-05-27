@@ -113,7 +113,7 @@ RÈGLES:
 - Cuisine: chapitres = recettes ou techniques, progression du simple au complexe, variété des plats
 - Technologie: titres concrets et actionnables, progression logique, cas d'usage pratiques
 - Développement enfants: chapitres par compétence ou étape de développement, conseils parents concrets
-${body.categorySubStyle ? `- GENRE/STYLE CHOISI PAR L'AUTEUR: "${body.categorySubStyle}" — adapte la structure des chapitres à ce style spécifique` : ""}
+${(body.categorySubStyles as string[] | undefined)?.length ? `- GENRE(S)/STYLE(S) CHOISI(S): "${(body.categorySubStyles as string[]).join(" + ")}" — adapte la structure et les titres de chapitres à ces conventions littéraires` : ""}\n${body.styleBrief ? `- BRIEF D'ÉCRITURE DE L'AUTEUR: ${body.styleBrief}` : ""}
 ${body.categoryFocus ? `- FOCUS DEMANDÉ: ${body.categoryFocus}` : ""}
 Réponds UNIQUEMENT avec ce JSON: {"chapters": ["Titre 1", "Titre 2", ...]}` },
         ],
@@ -128,7 +128,9 @@ Réponds UNIQUEMENT avec ce JSON: {"chapters": ["Titre 1", "Titre 2", ...]}` },
     // â”€â”€ CHAPTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (action === "chapter") {
       const { title, chapterTitle, chapterIndex, totalChapters, category, style } = body;
-      const { description: chDesc, themes: chThemes, savedStyleDescription: chSavedStyle, categoryFocus, categorySubStyle } = body;
+      const { description: chDesc, themes: chThemes, savedStyleDescription: chSavedStyle, categoryFocus, categorySubStyles: rawSubStyles, styleBrief } = body;
+      const categorySubStyleArr: string[] = Array.isArray(rawSubStyles) ? rawSubStyles : (rawSubStyles ? [rawSubStyles] : []);
+      const categorySubStyle = categorySubStyleArr.join(" + ");
       const isNovel = category?.includes("Roman");
 
 
@@ -239,7 +241,7 @@ Titre: "${chapterTitle}"
 
       if (isPoem) {
         // Build sub-style specific poem prompt
-        const subStyle = categorySubStyle || style || "";
+        const subStyle = categorySubStyleArr[0] || style || "";
 
         const poemStyleGuides: Record<string, string> = {
           "Romantique": `Poème romantique sur "${chapterTitle}" pour le recueil "${title}" (${chapterIndex}/${totalChapters}).
@@ -277,9 +279,10 @@ Style : liberté formelle totale — pas de rime imposée, pas de métrique fixe
 Aucun titre, aucun astérisque, aucun commentaire.`,
         };
 
-        const poemInstruction = poemStyleGuides[subStyle] || `Poème sur "${chapterTitle}" du recueil "${title}" (${chapterIndex}/${totalChapters}).
-Court et dense, adapté à l'émotion du titre — images fortes, rythme soutenu, métaphores originales. Termine sur une image inoubliable.
-Aucun astérisque, aucun tiret, aucun titre.`;
+        const matchingPoemGuides = categorySubStyleArr.filter(s => poemStyleGuides[s]);
+        const poemInstruction = matchingPoemGuides.length > 1
+          ? `Écris un poème hybride sur "${chapterTitle}" du recueil "${title}" (${chapterIndex}/${totalChapters}) qui fusionne ces formes poétiques : ${categorySubStyleArr.join(" + ")}.\nMélange leurs conventions de façon créative et cohérente — une oeuvre unique née de cette tension.\nAucun astérisque, aucun tiret, aucun titre, aucun commentaire. Seulement des vers.`
+          : (poemStyleGuides[subStyle] || `Poème sur "${chapterTitle}" du recueil "${title}" (${chapterIndex}/${totalChapters}).\nCourt et dense, adapté à l'émotion du titre — images fortes, rythme soutenu, métaphores originales. Termine sur une image inoubliable.\nAucun astérisque, aucun tiret, aucun titre.`);
 
         const poemCompletion = await groq.chat.completions.create({
           model: MODEL,
@@ -400,18 +403,17 @@ Stade de développement précis concerné (0-3 mois, 6-12 mois, etc.). Activité
 Intelligence émotionnelle chez l'enfant : reconnaître, nommer, gérer ses émotions. Histoire courte illustrant la valeur du chapitre (empathie, courage, honnêteté...). Activité parent-enfant pour ancrer la valeur. Dialogue modèle à reproduire. Ton doux et coloré, adapté à être lu avec l'enfant.`,
       };
 
-      // If we have a matching sub-style, use it directly
-      if (subStyle && categorySubStyleGuides[subStyle]) {
-        const subStyleContent = categorySubStyleGuides[subStyle];
+      // Multi-style fusion system
+      const matchingGuides = categorySubStyleArr.filter(s => categorySubStyleGuides[s]).map(s => categorySubStyleGuides[s]);
+      if (matchingGuides.length > 0) {
+        const fusedInstruction = matchingGuides.length === 1
+          ? matchingGuides[0]
+          : `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" en FUSIONNANT créativement ces styles — une voix unique qui les synthétise naturellement, pas une alternance mécanique :\n\n${categorySubStyleArr.filter(s => categorySubStyleGuides[s]).map((s,i) => `STYLE ${i+1} — ${s}:\n${categorySubStyleGuides[s].split("\n").slice(1).join("\n")}`).join("\n\n")}`;
         const subStyleCompletion = await groq.chat.completions.create({
           model: MODEL,
           messages: [
-            { role: "system", content: `${SYSTEM_AUTHOR} Tu maîtrises parfaitement les conventions d'écriture du genre "${subStyle}". Tu respectes ses codes littéraires avec précision.` },
-            { role: "user", content: subStyleContent + (themeContext ? `
-
-${themeContext}` : "") + (categoryFocus ? `
-
-FOCUS: ${categoryFocus}` : "") + noMarkdownReminder },
+            { role: "system", content: `${SYSTEM_AUTHOR} Tu maîtrises les conventions de ces genres : ${categorySubStyleArr.join(", ")}. Tu les fusionne en une voix cohérente et originale.` },
+            { role: "user", content: fusedInstruction + (themeContext ? `\n\n${themeContext}` : "") + (categoryFocus ? `\n\nFOCUS: ${categoryFocus}` : "") + noMarkdownReminder },
           ],
           temperature: 0.88, max_tokens: 2800,
         });
@@ -467,6 +469,7 @@ Langue tendue, rythme haletant, prose dramatique continue.`,
         description ? `DESCRIPTION DU LIVRE: ${description}` : "",
         themes      ? `THÈMES PRINCIPAUX À RESPECTER: ${themes}` : "",
         savedStyleDescription ? `STYLE PERSONNEL DE L'AUTEUR (reproduire fidèlement):\n${savedStyleDescription}` : "",
+        styleBrief ? `BRIEF D'ÉCRITURE DE L'AUTEUR (respecter absolument):\n${styleBrief}` : "",
       ].filter(Boolean).join("\n");
 
       const noMarkdownReminder = `
@@ -521,7 +524,9 @@ Prose fluide, paragraphes de 3-5 lignes, rythme naturel. Longueur adaptée au co
       const { title, chapterTitle, chapterIndex, totalChapters, category, style, instruction,
               description, themes, savedStyleDescription, allChapterTitles,
               prevChapterContent, nextChapterContent, novelBible, novelGenre,
-              categorySubStyle: regenSubStyle } = body;
+              categorySubStyles: regenSubStylesRaw, styleBrief: regenStyleBrief } = body;
+      const regenSubStyleArr: string[] = Array.isArray(regenSubStylesRaw) ? regenSubStylesRaw : (regenSubStylesRaw ? [regenSubStylesRaw] : []);
+      const regenSubStyle = regenSubStyleArr.join(" + ");
 
       const isPoem = category?.includes("Poési");
       const isNovel = category?.includes("Roman");
@@ -539,6 +544,8 @@ Prose fluide, paragraphes de 3-5 lignes, rythme naturel. Longueur adaptée au co
           : "",
         description || themes ? `THÈME ET CONTEXTE DU LIVRE: ${description || themes}` : "",
         savedStyleDescription ? `STYLE PERSONNEL DE L'AUTEUR (reproduire fidèlement):\n${savedStyleDescription}` : "",
+        regenStyleBrief ? `BRIEF D'ÉCRITURE DE L'AUTEUR:\n${regenStyleBrief}` : "",
+        regenSubStyle ? `GENRE(S)/STYLE(S) DE L'OEUVRE: ${regenSubStyle} — respecte ces conventions littéraires.` : "",
       ].filter(Boolean).join("\n\n");
 
       // Category-specific guide synchronized with chapter action
@@ -627,7 +634,7 @@ ${contextBlock ? `\n${contextBlock}` : ""}
 
 Prose fluide et naturelle. Respecte la continuité avec les chapitres adjacents.
 CRUCIAL: Cette version doit être RADICALEMENT DIFFÉRENTE — nouvelle accroche, nouveaux exemples concrets, angle d'attaque inédit, histoire d'ouverture différente. Le lecteur ne doit jamais avoir l'impression de relire la même chose.
-${regenSubStyle ? `GENRE/STYLE DE L'OEUVRE: "${regenSubStyle}" — respecte absolument les conventions littéraires de ce genre.` : ""}
+
 Aucun astérisque, aucun sous-titre, aucune liste.${regenCategoryGuide ? `\n\n${regenCategoryGuide}` : ""}` },
         ],
         temperature: 0.88, max_tokens: 2800,

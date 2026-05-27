@@ -182,7 +182,8 @@ function StudioContent() {
 
   const selectedStyleDescription = savedStyles.find(s => s.id === selectedStyleId)?.styleDescription || "";
   const [categoryFocus, setCategoryFocus] = useState("");
-  const [categorySubStyle, setCategorySubStyle] = useState("");
+  const [categorySubStyles, setCategorySubStyles] = useState<string[]>([]);
+  const [styleBrief, setStyleBrief] = useState("");
 
   const isPoem = category.includes("Poési");
   const isKids = category.includes("enfant") || category.includes("coloriage");
@@ -212,7 +213,7 @@ function StudioContent() {
     setGenerating(true);
     setStep("plan");
     try {
-      const payload: Record<string, unknown> = { action: "plan", title, category, description, mode, categoryFocus, categorySubStyle };
+      const payload: Record<string, unknown> = { action: "plan", title, category, description, mode, categoryFocus, categorySubStyles, styleBrief };
       if (isNovel) {
         payload.novelCharacters = novelCharacters;
         payload.novelTwists = novelTwists.filter(t => t.trim());
@@ -247,7 +248,7 @@ function StudioContent() {
       updated[i] = { ...updated[i], status: "writing" };
       setChapters([...updated]);
       try {
-        const chPayload: Record<string, unknown> = { action: "chapter", title, chapterTitle: chapters[i].title, chapterIndex: i + 1, totalChapters: chapters.length, category, style: writingStyle, description: bookDescription, themes: bookDescription, savedStyleDescription: selectedStyleDescription, categoryFocus, categorySubStyle };
+        const chPayload: Record<string, unknown> = { action: "chapter", title, chapterTitle: chapters[i].title, chapterIndex: i + 1, totalChapters: chapters.length, category, style: writingStyle, description: bookDescription, themes: bookDescription, savedStyleDescription: selectedStyleDescription, categoryFocus, categorySubStyles, styleBrief };
         if (isNovel) {
           chPayload.novelBible = novelBible;
           chPayload.novelGenre = novelGenre;
@@ -322,7 +323,8 @@ function StudioContent() {
         prevChapterContent: idx > 0 ? chapters[idx - 1].content.slice(0, 600) : "",
         nextChapterContent: idx < chapters.length - 1 ? chapters[idx + 1].content.slice(0, 400) : "",
         categoryFocus,
-        categorySubStyle,
+        categorySubStyles,
+        styleBrief,
       };
       if (isNovel) {
         regenPayload.novelBible = novelBible;
@@ -911,7 +913,7 @@ function StudioContent() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                 <div>
                   <label className="text-white/60 text-sm mb-2 block">Catégorie</label>
-                  <select value={category} onChange={e => setCategory(e.target.value)} className={selectClass}>
+                  <select value={category} onChange={e => { setCategory(e.target.value); setCategorySubStyles([]); setStyleBrief(""); }} className={selectClass}>
                     <option value="">Choisir...</option>
                     {CATEGORIES.map(c => <option key={c}>{c}</option>)}
                   </select>
@@ -927,41 +929,61 @@ function StudioContent() {
               </div>
               <div>
                 <label className="text-white/60 text-sm mb-2 block">
-                  {isPoem ? "Genre poétique" : isNovel ? "Style narratif" : "Style d'écriture"}
+                  {isPoem ? "Genre(s) poétique(s)" : isNovel ? "Style(s) narratif(s)" : "Style(s) d'écriture"}
+                  {categorySubStyles.length > 0 && <span className="ml-2 text-purple-400 text-xs">({categorySubStyles.length} sélectionné{categorySubStyles.length > 1 ? "s" : ""} — fusion créative)</span>}
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {(isPoem
-                    ? ["Romantique", "Élégie / Triste", "Mélancolique", "Mystique", "Satirique", "Haïku", "Sonnet", "Vers libre"]
+                    ? ["Romantique","Élégie / Triste","Mélancolique","Mystique","Satirique","Haïku","Sonnet","Vers libre","Prose poétique","Engagée","Onirique","Spoken word","Épique","Lyrique","Acrostiche"]
                     : isNovel
-                    ? ["Immersif & sensoriel", "Psychologique", "Cinématographique", "Poétique", "Haletant & tendu"]
+                    ? ["Immersif & sensoriel","Psychologique","Cinématographique","Poétique","Haletant & tendu","1ère personne","3ème omniscient","Multi-POV","Non-linéaire","Flash-backs","Gothique","Dark Academia","Cozy","Épistolaire"]
                     : category.includes("Business") || category.includes("Entrepren")
-                    ? ["Guide pratique", "Storytelling entrepreneur", "Leadership & vision", "Étude de cas"]
+                    ? ["Guide pratique","Storytelling entrepreneur","Leadership & vision","Étude de cas","Manifeste","Pour débutants","Basé sur des données","Anti-manuel","Méthode & framework","Biographie d'entrepreneur"]
                     : category.includes("inance") || category.includes("nvestiss")
-                    ? ["Épargne & budget", "Bourse & dividendes", "Immobilier", "Crypto & DeFi"]
+                    ? ["Épargne & budget","Bourse & dividendes","Immobilier","Crypto & DeFi","Liberté financière","Trading actif","Revenus passifs","Pour jeunes","Anti-dettes","FIRE method"]
                     : (category.includes("ant") || category.includes("Bien")) && !category.includes("nfant")
-                    ? ["Nutrition & alimentation", "Fitness & performance", "Santé mentale", "Médecine naturelle"]
+                    ? ["Nutrition & alimentation","Fitness & performance","Santé mentale","Médecine naturelle","Anti-âge","Santé holistique","Santé féminine","Santé intestinale","Sommeil & récupération","Gestion du stress"]
                     : category.includes("piritual")
-                    ? ["Sagesse orientale", "Foi chrétienne", "Islam & soufisme", "Éveil intérieur"]
+                    ? ["Sagesse orientale","Foi chrétienne","Islam & soufisme","Éveil intérieur","Stoïcisme","Yoga & Ayurveda","Animisme & traditions","Méditation profonde","Chamanisme","Kabbale & mystique"]
                     : category.includes("veloppement") && !category.includes("nfant")
-                    ? ["Coach-action", "Memoir & récit", "Science comportementale", "Philosophie pratique"]
+                    ? ["Coach-action","Memoir & récit","Science comportementale","Philosophie pratique","Pour introvertis","Relations & amour","Carrière & ambition","Confiance en soi","Productivité","Trauma & guérison"]
                     : category.includes("uisine")
-                    ? ["Cuisine traditionnelle", "Cuisine fusion", "Cuisine santé", "Pâtisserie & boulangerie"]
+                    ? ["Cuisine traditionnelle","Cuisine fusion","Cuisine santé","Pâtisserie & boulangerie","Végane","Cuisines africaines","Cuisine asiatique","Méditerranéenne","Street food","Cuisine rapide"]
                     : category.includes("echnolog")
-                    ? ["Tutoriel pratique", "Architecture & systèmes", "IA & futur", "Vulgarisation"]
+                    ? ["Tutoriel pratique","Architecture & systèmes","IA & futur","Vulgarisation","Cybersécurité","No-code / Low-code","Mobile & Apps","Cloud & DevOps","Gaming & game design","Data & ML"]
                     : category.includes("veloppement") && category.includes("nfant")
-                    ? ["Montessori", "Parentalité positive", "Éveil & motricité", "Valeurs & émotions"]
-                    : ["Motivant", "Storytelling", "Académique", "Humoristique", "Dramatique"]
-                  ).map(s => (
-                    <button key={s} onClick={() => {
-                      if (isPoem || isNovel) { setWritingStyle(s); setCategorySubStyle(s); }
-                      else { setCategorySubStyle(s); setWritingStyle(s); }
-                      setSelectedStyleId("");
-                    }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${(writingStyle === s || categorySubStyle === s) && !selectedStyleId ? "bg-purple-500 text-white" : "bg-white/5 text-white/50 hover:text-white"}`}>
-                      {s}
-                    </button>
-                  ))}
+                    ? ["Montessori","Parentalité positive","Éveil & motricité","Valeurs & émotions","Adolescents","École & apprentissage","Dys & TSA","Discipline bienveillante","Langage des signes bébé","Jeux éducatifs"]
+                    : ["Motivant","Storytelling","Académique","Humoristique","Dramatique"]
+                  ).map(s => {
+                    const isActive = categorySubStyles.includes(s);
+                    return (
+                      <button key={s} onClick={() => {
+                        setCategorySubStyles(prev =>
+                          prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]
+                        );
+                        if (!isPoem && !isNovel) setWritingStyle(s);
+                        setSelectedStyleId("");
+                      }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${isActive ? "bg-purple-500 text-white border-purple-400" : "bg-white/5 text-white/50 hover:text-white border-transparent"}`}>
+                        {isActive && <span className="mr-1">✓</span>}{s}
+                      </button>
+                    );
+                  })}
                 </div>
+                {categorySubStyles.length > 1 && (
+                  <p className="text-purple-400/60 text-xs mt-2">✨ L'IA va fusionner ces styles en une voix unique et cohérente</p>
+                )}
+                <div className="mt-3">
+                  <label className="text-white/50 text-xs mb-1.5 block">Brief d'écriture (optionnel) — décris ton style en tes propres mots</label>
+                  <textarea
+                    value={styleBrief}
+                    onChange={e => setStyleBrief(e.target.value)}
+                    rows={2}
+                    placeholder="Ex: Écris comme Alain Mabanckou, style oral avec humour, phrases courtes, beaucoup de dialogues. Ou: Prose dense et lyrique à la Marguerite Yourcenar, peu de dialogues, longues phrases contemplatives..."
+                    className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none placeholder-white/20 resize-none"
+                  />
+                </div>
+              </div>
                 {savedStyles.length > 0 && (
                   <div className="mt-3">
                     <label className="text-white/40 text-xs mb-1.5 flex items-center gap-1.5 block">
