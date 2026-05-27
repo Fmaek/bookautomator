@@ -190,21 +190,20 @@ function StudioContent() {
 
   // ── Novel-specific state ──────────────────────────────────────────────────────
   const [novelCharacters, setNovelCharacters] = useState([
-    { name: "", role: "Protagoniste (principal)", desc: "" },
-    { name: "", role: "Personnage principal 2", desc: "" },
-    { name: "", role: "Personnage principal 3", desc: "" },
-    { name: "", role: "Personnage secondaire 1", desc: "" },
-    { name: "", role: "Personnage secondaire 2", desc: "" },
-    { name: "", role: "Personnage de transition", desc: "" },
+    { name: "", role: "Protagoniste", desc: "" },
   ]);
-  const [novelTwist1, setNovelTwist1] = useState("");
-  const [novelTwist2, setNovelTwist2] = useState("");
+  const [novelTwists, setNovelTwists] = useState<string[]>([]);
   const [novelUniverse, setNovelUniverse] = useState("");
   const [novelGenre, setNovelGenre] = useState("Drame");
   const [novelBible, setNovelBible] = useState("");
 
-  const updateNovelChar = (i: number, field: "name" | "desc", val: string) =>
+  const addNovelChar = () => setNovelCharacters(prev => [...prev, { name: "", role: "", desc: "" }]);
+  const removeNovelChar = (i: number) => setNovelCharacters(prev => prev.filter((_, j) => j !== i));
+  const updateNovelChar = (i: number, field: "name" | "role" | "desc", val: string) =>
     setNovelCharacters(prev => prev.map((c, j) => j === i ? { ...c, [field]: val } : c));
+  const addNovelTwist = () => setNovelTwists(prev => [...prev, ""]);
+  const removeNovelTwist = (i: number) => setNovelTwists(prev => prev.filter((_, j) => j !== i));
+  const updateNovelTwist = (i: number, val: string) => setNovelTwists(prev => prev.map((t, j) => j === i ? val : t));
 
   const generatePlan = async () => {
     if (!title) return;
@@ -214,8 +213,7 @@ function StudioContent() {
       const payload: Record<string, unknown> = { action: "plan", title, category, description, mode };
       if (isNovel) {
         payload.novelCharacters = novelCharacters;
-        payload.novelTwist1 = novelTwist1;
-        payload.novelTwist2 = novelTwist2;
+        payload.novelTwists = novelTwists.filter(t => t.trim());
         payload.novelUniverse = novelUniverse;
         payload.novelGenre = novelGenre;
       }
@@ -251,8 +249,7 @@ function StudioContent() {
         if (isNovel) {
           chPayload.novelBible = novelBible;
           chPayload.novelGenre = novelGenre;
-          chPayload.novelTwist1 = novelTwist1;
-          chPayload.novelTwist2 = novelTwist2;
+          chPayload.novelTwists = novelTwists.filter(t => t.trim());
         }
         const res = await fetch("/api/write", {
           method: "POST",
@@ -308,10 +305,30 @@ function StudioContent() {
     setRegenIdx(idx);
     setChapters(prev => prev.map((c, i) => i === idx ? { ...c, status: "writing" as const } : c));
     try {
+      const regenPayload: Record<string, unknown> = {
+        action: "regenerate",
+        title,
+        chapterTitle: chapters[idx].title,
+        chapterIndex: idx + 1,
+        totalChapters: chapters.length,
+        category,
+        style: writingStyle,
+        description: bookDescription,
+        themes: bookDescription,
+        savedStyleDescription: selectedStyleDescription,
+        allChapterTitles: chapters.map(c => c.title),
+        prevChapterContent: idx > 0 ? chapters[idx - 1].content.slice(0, 600) : "",
+        nextChapterContent: idx < chapters.length - 1 ? chapters[idx + 1].content.slice(0, 400) : "",
+      };
+      if (isNovel) {
+        regenPayload.novelBible = novelBible;
+        regenPayload.novelGenre = novelGenre;
+        regenPayload.novelTwists = novelTwists.filter(t => t.trim());
+      }
       const res = await fetch("/api/write", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "regenerate", title, chapterTitle: chapters[idx].title, chapterIndex: idx + 1, totalChapters: chapters.length, category, style: writingStyle, description: bookDescription, themes: bookDescription, savedStyleDescription: selectedStyleDescription }),
+        body: JSON.stringify(regenPayload),
       });
       const data = await res.json();
       setChapters(prev => prev.map((c, i) => i === idx ? { ...c, content: data.content || c.content, status: "done" as const } : c));
@@ -982,38 +999,62 @@ function StudioContent() {
                       className={inputClass} />
                   </div>
 
-                  {/* Personnages */}
+                  {/* Personnages — dynamiques */}
                   <div>
-                    <label className="text-white/50 text-xs mb-2 block">Personnages</label>
-                    <div className="space-y-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-white/50 text-xs">Personnages <span className="text-white/25">({novelCharacters.length})</span></label>
+                      <button type="button" onClick={addNovelChar}
+                        className="text-xs px-2 py-0.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 rounded-lg transition-all">
+                        + Ajouter
+                      </button>
+                    </div>
+                    <div className="space-y-1.5">
                       {novelCharacters.map((c, i) => (
-                        <div key={i} className={`p-2.5 rounded-xl border space-y-1.5 ${i < 3 ? "border-rose-500/20 bg-rose-500/5" : i < 5 ? "border-orange-500/15 bg-orange-500/5" : "border-white/8 bg-white/3"}`}>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-xs font-semibold shrink-0 ${i < 3 ? "text-rose-400" : i < 5 ? "text-orange-400" : "text-white/40"}`}>{c.role}</span>
-                          </div>
-                          <div className="grid grid-cols-3 gap-1.5">
+                        <div key={i} className="flex items-start gap-1.5 p-2 rounded-xl border border-white/8 bg-black/20">
+                          <div className="flex-1 grid grid-cols-5 gap-1">
+                            <input value={c.role} onChange={e => updateNovelChar(i, "role", e.target.value)}
+                              placeholder="Rôle" className="col-span-2 bg-black/30 border border-white/8 rounded-lg px-2 py-1.5 text-white/70 text-xs focus:outline-none focus:border-rose-500/40" />
                             <input value={c.name} onChange={e => updateNovelChar(i, "name", e.target.value)}
-                              placeholder="Prénom" className="bg-black/30 border border-white/8 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-rose-500/40 col-span-1" />
+                              placeholder="Prénom" className="col-span-1 bg-black/30 border border-white/8 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-rose-500/40" />
                             <input value={c.desc} onChange={e => updateNovelChar(i, "desc", e.target.value)}
-                              placeholder="Description courte — traits, motivations, secrets..." className="bg-black/30 border border-white/8 rounded-lg px-2 py-1.5 text-white/70 text-xs focus:outline-none focus:border-rose-500/40 col-span-2" />
+                              placeholder="Traits, motivations, secret..." className="col-span-2 bg-black/30 border border-white/8 rounded-lg px-2 py-1.5 text-white/60 text-xs focus:outline-none focus:border-rose-500/40" />
                           </div>
+                          {novelCharacters.length > 1 && (
+                            <button type="button" onClick={() => removeNovelChar(i)} className="text-white/20 hover:text-red-400 mt-1.5 shrink-0 transition-colors">✕</button>
+                          )}
                         </div>
                       ))}
                     </div>
+                    <p className="text-white/20 text-xs mt-1.5">💡 Si tu ne remplis pas tous les champs, l&apos;IA complètera les personnages selon l&apos;histoire</p>
                   </div>
 
-                  {/* Plot Twists */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-white/50 text-xs mb-1.5 block flex items-center gap-1">💥 Plot Twist 1</label>
-                      <textarea value={novelTwist1} onChange={e => setNovelTwist1(e.target.value)} rows={2}
-                        placeholder="Ex: Le détective est en réalité le meurtrier qu'il cherche..." className={`${inputClass} resize-none text-xs`} />
+                  {/* Plot Twists — dynamiques */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-white/50 text-xs">Plot Twists <span className="text-white/25">({novelTwists.length})</span></label>
+                      {novelTwists.length < 4 && (
+                        <button type="button" onClick={addNovelTwist}
+                          className="text-xs px-2 py-0.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 rounded-lg transition-all">
+                          + Ajouter
+                        </button>
+                      )}
                     </div>
-                    <div>
-                      <label className="text-white/50 text-xs mb-1.5 block flex items-center gap-1">💥 Plot Twist 2</label>
-                      <textarea value={novelTwist2} onChange={e => setNovelTwist2(e.target.value)} rows={2}
-                        placeholder="Ex: La ville entière savait la vérité depuis le début..." className={`${inputClass} resize-none text-xs`} />
+                    {novelTwists.length === 0 && (
+                      <p className="text-white/25 text-xs italic">Aucun plot twist — l&apos;IA décidera selon le genre</p>
+                    )}
+                    <div className="space-y-1.5">
+                      {novelTwists.map((t, i) => (
+                        <div key={i} className="flex items-start gap-1.5">
+                          <textarea value={t} onChange={e => updateNovelTwist(i, e.target.value)} rows={2}
+                            placeholder={`Ex: ${i === 0 ? "Le personnage découvre que son allié est l'ennemi..." : "La vérité sur le passé du protagoniste change tout..."}`}
+                            className={`flex-1 ${inputClass} resize-none text-xs`} />
+                          <button type="button" onClick={() => removeNovelTwist(i)} className="text-white/20 hover:text-red-400 mt-2 shrink-0 transition-colors">✕</button>
+                        </div>
+                      ))}
                     </div>
+                    {novelTwists.length > 0 && (
+                      <p className="text-white/20 text-xs mt-1.5">💡 L&apos;IA placera les twists aux moments les plus percutants selon la structure narrative</p>
+                    )}
                   </div>
 
                   {/* Thème */}

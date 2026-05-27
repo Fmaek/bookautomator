@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
   try {
     // â”€â”€ PLAN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (action === "plan") {
-      const { title, category, description, style, novelCharacters, novelTwist1, novelTwist2, novelUniverse, novelGenre } = body;
+      const { title, category, description, style, novelCharacters, novelTwists, novelUniverse, novelGenre } = body;
       const isPoem = category?.includes("Poési");
       const isNovel = category?.includes("Roman");
       const styleNote = style ? `Style d'écriture: ${style}.` : "";
@@ -61,16 +61,18 @@ export async function POST(req: NextRequest) {
           .filter((c: {name:string;role:string;desc:string}) => c.name || c.desc)
           .map((c: {name:string;role:string;desc:string}) => `- ${c.role}${c.name ? ` (${c.name})` : ""}: ${c.desc || "à définir"}`)
           .join("\n");
-        const twistsLine = [
-          novelTwist1 ? `Plot Twist 1: ${novelTwist1}` : "",
-          novelTwist2 ? `Plot Twist 2: ${novelTwist2}` : "",
-        ].filter(Boolean).join("\n");
+        const twistsList = ((novelTwists || []) as string[]).filter((t: string) => t.trim());
+        const twistsLine = twistsList.length > 0
+          ? twistsList.map((t: string, i: number) => `Plot Twist ${i + 1}: ${t}`).join("\n")
+          : "";
 
         const novelCompletion = await groq.chat.completions.create({
           model: MODEL,
           messages: [
             { role: "system", content: "Tu es un romancier expert (prix littéraire, best-seller international). Tu réponds UNIQUEMENT en JSON valide, sans markdown." },
-            { role: "user", content: `Crée le plan complet d'un roman en 3 actes pour ce projet:\n\nTITRE: "${title}"\nGENRE: ${novelGenre || "Drame"}\nUNIVERS / LIEU / ÉPOQUE: ${novelUniverse || "contemporain"}\nTHÈME CENTRAL: ${description || "à définir"}\n\nPERSONNAGES:\n${charLines || "À développer selon le genre"}\n\nPLOT TWISTS À PLACER:\n${twistsLine || "Invente 2 plot twists puissants adaptés au genre"}\n\nINSTRUCTIONS:\n- 10 à 12 chapitres (pas plus, pas moins)\n- Structure en 3 actes: Acte I (ch. 1-3: mise en place + conflit initial), Acte II (4-9: montée en tension, retournements), Acte III (10-12: climax + résolution)\n- Plot Twist 1 au chapitre 5, Plot Twist 2 au chapitre 9\n- Titres de chapitres évocateurs, cinématographiques, jamais "Chapitre 1"\n- La bible doit inclure pour chaque personnage: nom complet, âge, physique, psychologie, secret, arc narratif\n- Réponds UNIQUEMENT avec ce JSON valide:\n{\n  "chapters": ["Titre ch.1", "Titre ch.2", ...],\n  "bible": "BIBLE DES PERSONNAGES:\n\n[contenu complet]\n\nSTRUCTURE NARRATIVE:\n[résumé acte par acte]"\n}` },
+            { role: "user", content: `Crée le plan complet d'un roman en 3 actes pour ce projet:\n\nTITRE: "${title}"\nGENRE: ${novelGenre || "Drame"}\nUNIVERS / LIEU / ÉPOQUE: ${novelUniverse || "contemporain"}\nTHÈME CENTRAL: ${description || "à définir"}\n\nPERSONNAGES:\n${charLines || "À développer selon le genre"}\n\nPLOT TWISTS À PLACER:\n${twistsLine || "Invente 2 plot twists puissants adaptés au genre"}\n\nINSTRUCTIONS:\n- 10 à 12 chapitres (pas plus, pas moins)\n- Structure en 3 actes: Acte I (ch. 1-3: mise en place + conflit initial), Acte II (4-9: montée en tension, retournements), Acte III (10-12: climax + résolution)\n- Place les plot twists aux moments narrativement les plus forts — ÉVITE le milieu exact et l'avant-dernier chapitre (trop prévisibles). Choisis des positions inattendues qui maximisent l'impact
+- Si aucun plot twist n'est spécifié, invente-en de puissants adaptés au genre
+- Indique dans la bible à quels chapitres tu as placé chaque plot twist et pourquoi ce choix\n- Titres de chapitres évocateurs, cinématographiques, jamais "Chapitre 1"\n- La bible doit inclure pour chaque personnage: nom complet, âge, physique, psychologie, secret, arc narratif\n- Réponds UNIQUEMENT avec ce JSON valide:\n{\n  "chapters": ["Titre ch.1", "Titre ch.2", ...],\n  "bible": "BIBLE DES PERSONNAGES:\n\n[contenu complet]\n\nSTRUCTURE NARRATIVE:\n[résumé acte par acte]"\n}` },
           ],
           temperature: 0.85, max_tokens: 2500,
         });
@@ -89,7 +91,20 @@ export async function POST(req: NextRequest) {
           { role: "system", content: "Tu es un expert en création de livres à succès. Réponds uniquement en JSON valide, sans markdown." },
           { role: "user", content: isPoem
             ? `Crée un recueil de 10-12 poèmes pour ce livre en français.\nTitre: "${title}" ${styleNote}\nRéponds UNIQUEMENT avec ce JSON: {"chapters": ["Titre poème 1", ...]}`
-            : `Crée un plan de 7-9 chapitres percutants pour ce livre en français.\nTitre: "${title}" | Catégorie: ${category || "Non-fiction"} | Brief: ${description || "Livre pratique"} ${styleNote}\nTitres accrocheurs, pas juste "Chapitre 1".\nRéponds UNIQUEMENT avec ce JSON: {"chapters": ["Titre 1", "Titre 2", ...]}` },
+            : `Crée un plan de 8-10 chapitres percutants pour ce livre en français.
+Titre: "${title}" | Catégorie: ${category || "Non-fiction"} | Brief: ${description || ""}
+${styleNote}
+RÈGLES:
+- Titres spécifiques et évocateurs (jamais "Introduction", "Conclusion" génériques, jamais "Chapitre 1")
+- Chaque titre reflète exactement le contenu du chapitre
+- Structure progressive et logique adaptée à la catégorie
+- Pour Business/Entrepreneuriat: orientation action, résultats mesurables
+- Pour Développement personnel: transformation émotionnelle, avant/après
+- Pour Santé/Bien-être: pratique, accessible, motivant
+- Pour Spiritualité: profondeur, quête intérieure, révélation
+- Pour Finance: concret, stratégique, chiffres et méthodes
+- Si le brief décrit un roman ou personnages, adapte en conséquence
+Réponds UNIQUEMENT avec ce JSON: {"chapters": ["Titre 1", "Titre 2", ...]}` },
         ],
         temperature: 0.8, max_tokens: 1024,
       });
@@ -105,12 +120,10 @@ export async function POST(req: NextRequest) {
       const isNovel = category?.includes("Roman");
 
       if (isNovel) {
-        const { novelBible, novelGenre, novelTwist1, novelTwist2, description } = body;
+        const { novelBible, novelGenre, novelTwists: chNovelTwists, description } = body;
         const act = chapterIndex <= 3 ? "Acte I — Mise en place" : chapterIndex <= 9 ? "Acte II — Confrontation et montée en tension" : "Acte III — Climax et résolution";
-        const isTwistChapter = chapterIndex === 5 || chapterIndex === 9;
-        const twistNote = isTwistChapter
-          ? `\n\nATTENTION — CE CHAPITRE CONTIENT UN PLOT TWIST MAJEUR:\n${chapterIndex === 5 ? (novelTwist1 || "Premier grand retournement") : (novelTwist2 || "Deuxième grand retournement")}\nAmène le twist naturellement, avec des indices semés dans le chapitre avant de le révéler en fin de chapitre de façon percutante.`
-          : "";
+        // Let the bible (generated by plan) specify twist placement
+        const twistNote = "";
 
         const novelStylePrompts: Record<string, string> = {
           "Immersif & sensoriel": "Écris avec une richesse sensorielle totale — ce que les personnages voient, sentent, entendent, touchent, goûtent. Chaque scène doit ancrer le lecteur physiquement dans l'espace. Les émotions passent par le corps et les sens, jamais par de l'explication directe.",
@@ -284,10 +297,12 @@ RÈGLES ABSOLUES — NE JAMAIS ENFREINDRE:
 Aucun astérisque (*gras* ou **titre**). Aucun dièse (# ou ##). Aucun tiret de liste (- item). Aucun sous-titre visible dans le texte. Prose continue uniquement, paragraphes naturels, exactement comme un livre publié chez un grand éditeur.`;
 
       const basePrompt = stylePrompts[style] || `Écris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}".
-Commence par une accroche forte qui capture l'attention immédiatement.
-Développe avec profondeur, des exemples concrets et une progression naturelle.
-Termine par une phrase mémorable qui donne envie de lire la suite.
-600 à 800 mots, prose fluide et engageante.`;
+
+Commence par une accroche forte, concrète et immédiate — une histoire vraie, une question percutante ou une situation que le lecteur reconnaît.
+Développe l'idée principale avec profondeur : exemples réels, données, analogies frappantes. Montre, ne raconte pas.
+Alterne entre explication, illustration et application pratique.
+Termine par une synthèse mémorable et un pont vers la suite qui donne envie de continuer.
+900 à 1100 mots, prose fluide, paragraphes de 3-5 lignes, rythme naturel.`;
 
       const chapterPrompt = basePrompt + (themeContext ? `\n\n${themeContext}` : "") + noMarkdownReminder;
 
@@ -304,23 +319,91 @@ Termine par une phrase mémorable qui donne envie de lire la suite.
 
     // â”€â”€ REGENERATE SINGLE CHAPTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (action === "regenerate") {
-      const { title, chapterTitle, chapterIndex, totalChapters, category, style, instruction } = body;
-      const isPoem = category?.includes("PoÃ©si");
-      const styleNote = style ? `Style imposÃ©: ${style}.` : "";
+      const { title, chapterTitle, chapterIndex, totalChapters, category, style, instruction,
+              description, themes, savedStyleDescription, allChapterTitles,
+              prevChapterContent, nextChapterContent, novelBible, novelGenre } = body;
+
+      const isPoem = category?.includes("Poési");
+      const isNovel = category?.includes("Roman");
+
+      // Build continuity context
+      const contextBlock = [
+        allChapterTitles?.length
+          ? `PLAN COMPLET:\n${(allChapterTitles as string[]).map((t: string, i: number) => `${i + 1}. ${t}${i + 1 === chapterIndex ? " ← (chapitre à réécrire)" : ""}`).join("\n")}`
+          : "",
+        prevChapterContent
+          ? `FIN DU CHAPITRE PRÉCÉDENT (assurer la continuité):\n"...${prevChapterContent}"`
+          : "",
+        nextChapterContent
+          ? `DÉBUT DU CHAPITRE SUIVANT (préparer la transition):\n"${nextChapterContent}..."`
+          : "",
+        description || themes ? `THÈME ET CONTEXTE DU LIVRE: ${description || themes}` : "",
+        savedStyleDescription ? `STYLE PERSONNEL DE L'AUTEUR (reproduire fidèlement):\n${savedStyleDescription}` : "",
+      ].filter(Boolean).join("\n\n");
+
+      if (isNovel && novelBible) {
+        const novelStyleMap: Record<string, string> = {
+          "Immersif & sensoriel": "richesse sensorielle totale — ce que les persos voient, sentent, entendent",
+          "Psychologique": "profondeur psychologique, monologue intérieur, pensées contradictoires",
+          "Cinématographique": "coupes nettes, dialogues percutants, dynamique visuelle",
+          "Poétique": "prose poétique, images métaphoriques, langue musicale",
+          "Haletant & tendu": "rythme effréné, phrases courtes, révélations successives",
+        };
+        const styleDesc = novelStyleMap[style || ""] || "style littéraire immersif et naturel";
+        const completion = await groq.chat.completions.create({
+          model: MODEL,
+          messages: [
+            { role: "system", content: "Tu es un romancier de niveau international. Tu réécris des chapitres en préservant la cohérence narrative totale. Prose littéraire pure, jamais de markdown." },
+            { role: "user", content: `Réécris le chapitre ${chapterIndex}/${totalChapters} "${chapterTitle}" du roman "${title}" (genre: ${novelGenre || "Drame"}).
+${instruction ? `INSTRUCTION SPÉCIFIQUE: ${instruction}` : "Réécris avec un angle narratif différent — nouvelle entrée en scène, nouvelle tension, perspective différente."}
+
+BIBLE DES PERSONNAGES ET STRUCTURE:
+${novelBible}
+
+${contextBlock}
+
+STYLE: ${styleDesc}
+
+RÈGLES ABSOLUES:
+- 1500 à 2000 mots, prose littéraire pure
+- Même personnages, même cohérence, continuité respectée
+- Dialogue naturel révélateur de caractère + monologue intérieur
+- Zéro markdown, zéro titre, zéro liste, zéro astérisque` },
+          ],
+          temperature: 0.9, max_tokens: 3500,
+        });
+        return NextResponse.json({ content: completion.choices[0].message.content || "" });
+      }
+
+      if (isPoem) {
+        const completion = await groq.chat.completions.create({
+          model: MODEL,
+          messages: [
+            { role: "system", content: SYSTEM_AUTHOR },
+            { role: "user", content: `Réécris le poème "${chapterTitle}" du recueil "${title}" avec une approche totalement différente. ${instruction || "Version plus émotionnelle et imagée."} Aucun astérisque ni tiret.` },
+          ],
+          temperature: 0.92, max_tokens: 800,
+        });
+        return NextResponse.json({ content: completion.choices[0].message.content || "" });
+      }
+
+      const styleNote = style ? `Style imposé: ${style}. ` : "";
       const completion = await groq.chat.completions.create({
         model: MODEL,
         messages: [
           { role: "system", content: SYSTEM_AUTHOR },
-          { role: "user", content: isPoem
-            ? `RÃ©Ã©cris le poÃ¨me "${chapterTitle}" du recueil "${title}" avec une approche totalement diffÃ©rente. ${instruction || "Version plus Ã©motionnelle et imagÃ©e."} Aucun astÃ©risque ni tiret.`
-            : `RÃ©Ã©cris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" avec un angle entiÃ¨rement nouveau.
-${instruction ? `Instruction spÃ©cifique: ${instruction}` : "Nouveaux exemples, nouvelle entrÃ©e en matiÃ¨re, perspective diffÃ©rente."}
+          { role: "user", content: `Réécris le chapitre "${chapterTitle}" (${chapterIndex}/${totalChapters}) du livre "${title}" avec un angle entièrement nouveau.
+${instruction ? `Instruction spécifique: ${instruction}` : "Nouveaux exemples, nouvelle entrée en matière, perspective différente."}
 ${styleNote}
-600 Ã  800 mots, prose fluide et naturelle. Aucun astÃ©risque, aucun sous-titre, aucune liste.` },
+${contextBlock ? `\n${contextBlock}` : ""}
+
+800 à 1100 mots, prose fluide et naturelle. Respecte la continuité avec les chapitres adjacents. Aucun astérisque, aucun sous-titre, aucune liste.` },
         ],
-        temperature: 0.92, max_tokens: 2048,
+        temperature: 0.88, max_tokens: 2800,
       });
       return NextResponse.json({ content: completion.choices[0].message.content || "" });
+    }
+
     }
 
     // â”€â”€ IMPROVE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
